@@ -39,9 +39,13 @@
 
 #### 2. Domain & DNS
 - [ ] Domain name registered (e.g., `party.example.com`)
-- [ ] DNS A record pointing to your server's IP address
+- [ ] **Choose ONE of these options:**
+  - **Option A (Traditional):** DNS A record pointing to your server's IP address
+  - **Option B (Cloudflare Tunnel - Recommended):** Domain using Cloudflare nameservers
 - [ ] DNS propagation completed (check with `nslookup YOUR_DOMAIN_COM`)
 - [ ] Wait 15-30 minutes after DNS changes before proceeding
+
+> **💡 Using Cloudflare Tunnel?** See `deploy/CLOUDFLARE_TUNNEL_GUIDE.md` for a simpler setup with automatic SSL, DDoS protection, and no exposed ports. Skip SSL-related steps in this guide.
 
 #### 3. Email Service (Brevo)
 - [ ] Brevo account created at https://app.brevo.com
@@ -214,6 +218,8 @@ curl http://localhost
 ```
 
 ### Step 2.4: Install Certbot (for SSL)
+
+> **💡 Using Cloudflare Tunnel?** Skip this step and Step 4.3-4.4. See `deploy/CLOUDFLARE_TUNNEL_GUIDE.md` instead.
 
 ```bash
 # Install Certbot and Nginx plugin
@@ -648,6 +654,8 @@ curl http://YOUR_DOMAIN_COM
 ```
 
 ### Step 4.3: Obtain SSL Certificate
+
+> **💡 Using Cloudflare Tunnel?** Skip this step and Step 4.4. Cloudflare handles SSL automatically. See `deploy/CLOUDFLARE_TUNNEL_GUIDE.md` for tunnel setup.
 
 ⚠️ **IMPORTANT:** Make sure your domain's DNS is pointing to this server before proceeding!
 

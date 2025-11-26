@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+
+{% block title %}{% if action == 'edit' %}Edit{% else %}Add{% endif %} Potluck Item - {{ event.title }} - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <!-- Event Header -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">
+            {% if action == 'edit' %}
+                Edit Potluck Item
+            {% else %}
+                Add What You're Bringing
+            {% endif %}
+        </h1>
+        <p class="text-gray-600">{{ event.title }}</p>
+    </div>
+
+    <!-- Form -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <form method="POST" id="potluck-form">
+            {{ form.hidden_tag() }}
+            
+            <!-- Item Name -->
+            <div class="mb-6">
+                <label for="name" class="block text-sm font-medium text-gray-700 mb-2">
+                    Item Name <span class="text-red-500">*</span>
+                </label>
+                {{ form.name(class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent") }}
+                {% if form.name.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.name.errors[0] }}</p>
+                {% endif %}
+                <p class="mt-1 text-sm text-gray-500">e.g., Green Bean Casserole, Apple Pie, Sparkling Cider</p>
+            </div>
+
+            <!-- Category -->
+            <div class="mb-6">
+                <label for="category" class="block text-sm font-medium text-gray-700 mb-2">
+                    Category
+                </label>
+                {{ form.category(class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent") }}
+                {% if form.category.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.category.errors[0] }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Dietary Tags -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Dietary Restrictions/Tags
+                </label>
+                <div id="tag-input-container" class="mb-2">
+                    <input type="text"
+                           id="tag-input"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                           placeholder="Type to add tags (e.g., vegetarian, vegan, gluten-free)"
+                           autocomplete="off">
+                    <div id="tag-suggestions" class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto"></div>
+                </div>
+                <div id="selected-tags" class="flex flex-wrap gap-2 mb-2"></div>
+                {{ form.dietary_tags(id="dietary_tags_hidden") }}
+                <p class="text-sm text-gray-500">Common tags: vegetarian, vegan, gluten-free, nut-free, dairy-free</p>
+            </div>
+
+            <!-- Contributors -->
+            {% if household_members %}
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Who's Bringing This? <span class="text-red-500">*</span>
+                </label>
+                <p class="text-sm text-gray-500 mb-3">Select all household members who will contribute to this item</p>
+                <div class="space-y-2">
+                    {% for member in household_members %}
+                    <label class="flex items-center p-3 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="checkbox"
+                               name="contributor_checkbox"
+                               value="{{ member.id }}"
+                               class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                               onchange="updateContributors()">
+                        <span class="ml-3 text-sm text-gray-900">
+                            {{ member.full_name }}
+                            {% if member.is_child %}
+                                <span class="text-xs text-gray-500">(child)</span>
+                            {% endif %}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <p class="mt-2 text-sm text-red-600" id="contributor-error" style="display: none;">
+                    Please select at least one person
+                </p>
+            </div>
+            {% endif %}
+
+            <!-- Notes -->
+            <div class="mb-6">
+                <label for="notes" class="block text-sm font-medium text-gray-700 mb-2">
+                    Notes (Optional)
+                </label>
+                {{ form.notes(class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent") }}
+                {% if form.notes.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.notes.errors[0] }}</p>
+                {% endif %}
+                <p class="mt-1 text-sm text-gray-500">e.g., Serves 8-10 people, will be hot and ready to serve</p>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex gap-3">
+                <button type="submit" class="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+                    {% if action == 'edit' %}
+                        Update Item
+                    {% else %}
+                        Add Item
+                    {% endif %}
+                </button>
+                <a href="{{ url_for('public.event_detail', event_uuid=event.uuid, token=token) if token else url_for('public.event_detail', event_uuid=event.uuid) }}" 
+                   class="flex-1 bg-white text-gray-700 px-6 py-3 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors font-medium text-center">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// Dietary tags management - global scope for inline handlers
+let selectedTags = [];
+let tagInput, tagSuggestions, selectedTagsContainer, hiddenInput;
+let contributorHiddenInput, contributorError;
+
+// Common dietary tags for suggestions
+const commonTags = [
+    'vegetarian', 'vegan', 'gluten-free', 'nut-free', 'dairy-free',
+    'egg-free', 'soy-free', 'kosher', 'halal', 'low-carb', 'keto',
+    'paleo', 'sugar-free', 'organic', 'spicy', 'mild'
+];
+
+// Wait for DOM to be fully loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize DOM elements
+    tagInput = document.getElementById('tag-input');
+    tagSuggestions = document.getElementById('tag-suggestions');
+    selectedTagsContainer = document.getElementById('selected-tags');
+    hiddenInput = document.getElementById('dietary_tags_hidden');
+    contributorHiddenInput = document.getElementById('contributor_ids');
+    contributorError = document.getElementById('contributor-error');
+
+    // Initialize with existing tags from hidden field if editing
+    if (hiddenInput && hiddenInput.value) {
+        try {
+            selectedTags = JSON.parse(hiddenInput.value);
+            renderTags();
+        } catch (e) {
+            console.error('Error parsing dietary tags:', e);
+            selectedTags = [];
+        }
+    }
+
+    // Show suggestions on input
+    if (tagInput) {
+        tagInput.addEventListener('input', function() {
+    const query = this.value.toLowerCase().trim();
+    
+    if (query.length === 0) {
+        tagSuggestions.classList.add('hidden');
+        return;
+    }
+    
+    // Filter suggestions
+    const matches = commonTags.filter(tag => 
+        tag.toLowerCase().includes(query) && !selectedTags.includes(tag)
+    );
+    
+    if (matches.length === 0) {
+        tagSuggestions.classList.add('hidden');
+        return;
+    }
+    
+    // Render suggestions
+    tagSuggestions.innerHTML = matches.map(tag => 
+        `<div class="px-4 py-2 hover:bg-gray-100 cursor-pointer" data-tag="${tag}">${tag}</div>`
+    ).join('');
+    
+            tagSuggestions.classList.remove('hidden');
+        });
+
+        // Add tag on suggestion click
+        tagSuggestions.addEventListener('click', function(e) {
+            const tagDiv = e.target.closest('[data-tag]');
+            if (tagDiv) {
+                addTag(tagDiv.dataset.tag);
+                tagInput.value = '';
+                tagSuggestions.classList.add('hidden');
+            }
+        });
+
+        // Add tag on Enter key
+        tagInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const tag = this.value.trim().toLowerCase();
+                if (tag) {
+                    addTag(tag);
+                    this.value = '';
+                    tagSuggestions.classList.add('hidden');
+                }
+            }
+        });
+    }
+
+    if (tagSuggestions && tagInput) {
+        // Hide suggestions when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!tagInput.contains(e.target) && !tagSuggestions.contains(e.target)) {
+                tagSuggestions.classList.add('hidden');
+            }
+        });
+    }
+
+    // Initialize contributors from hidden field (for both add and edit)
+    if (contributorHiddenInput && contributorHiddenInput.value) {
+        try {
+            const contributorIds = JSON.parse(contributorHiddenInput.value);
+            console.log('Initializing contributors:', contributorIds);
+
+            // Check the corresponding checkboxes
+            contributorIds.forEach(id => {
+                const checkbox = document.querySelector(`input[name="contributor_checkbox"][value="${id}"]`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                    console.log(`Checked checkbox for person ID ${id}`);
+                } else {
+                    console.warn(`Checkbox not found for person ID ${id}`);
+                }
+            });
+        } catch (e) {
+            console.error('Error parsing contributor IDs:', e);
+        }
+    } else {
+        console.log('No contributor IDs to initialize');
+    }
+
+    // Form validation
+    const potluckForm = document.getElementById('potluck-form');
+    if (potluckForm) {
+        potluckForm.addEventListener('submit', function(e) {
+            console.log('=== FORM SUBMITTING ===');
+
+            // Update contributors one more time before submitting
+            updateContributors();
+
+            // Debug: Check all hidden fields in the form
+            console.log('All form inputs named contributor_ids:');
+            const allContributorInputs = document.querySelectorAll('input[name="contributor_ids"]');
+            allContributorInputs.forEach((input, index) => {
+                console.log(`  Input ${index}: id="${input.id}", value="${input.value}", type="${input.type}"`);
+            });
+
+            // Validate that at least one contributor is selected
+            if (contributorHiddenInput) {
+                let contributorIds = [];
+                try {
+                    contributorIds = contributorHiddenInput.value ? JSON.parse(contributorHiddenInput.value) : [];
+                    console.log('Final contributor IDs being submitted:', contributorIds);
+                    console.log('Hidden field value:', contributorHiddenInput.value);
+                    console.log('Hidden field getAttribute("value"):', contributorHiddenInput.getAttribute('value'));
+                } catch (err) {
+                    console.error('Error parsing contributor IDs on submit:', err);
+                    contributorIds = [];
+                }
+
+                if (contributorIds.length === 0) {
+                    console.error('No contributors selected - preventing form submission');
+                    e.preventDefault();
+                    if (contributorError) {
+                        contributorError.style.display = 'block';
+                    }
+                    // Scroll to the error
+                    contributorError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return false;
+                } else {
+                    console.log('Form validation passed - submitting with contributors:', contributorIds);
+                }
+            }
+        });
+    }
+}); // End of DOMContentLoaded
+
+// Global functions for inline handlers
+function addTag(tag) {
+    tag = tag.toLowerCase().trim();
+    if (!tag || selectedTags.includes(tag)) return;
+
+    selectedTags.push(tag);
+    renderTags();
+    updateHiddenInput();
+}
+
+function removeTag(tag) {
+    selectedTags = selectedTags.filter(t => t !== tag);
+    renderTags();
+    updateHiddenInput();
+}
+
+function renderTags() {
+    if (selectedTagsContainer) {
+        selectedTagsContainer.innerHTML = selectedTags.map(tag => `
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                ${tag}
+                <button type="button" onclick="removeTag('${tag}')" class="ml-2 text-green-600 hover:text-green-800">
+                    ×
+                </button>
+            </span>
+        `).join('');
+    }
+}
+
+function updateHiddenInput() {
+    if (hiddenInput) {
+        hiddenInput.value = JSON.stringify(selectedTags);
+    }
+}
+
+function updateContributors() {
+    const checkboxes = document.querySelectorAll('input[name="contributor_checkbox"]:checked');
+    const contributorIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+    console.log('=== updateContributors called ===');
+    console.log('Found checked checkboxes:', checkboxes.length);
+    console.log('Contributor IDs:', contributorIds);
+    console.log('All contributor checkboxes:', document.querySelectorAll('input[name="contributor_checkbox"]').length);
+
+    if (contributorHiddenInput) {
+        const oldValue = contributorHiddenInput.value;
+        contributorHiddenInput.value = JSON.stringify(contributorIds);
+        console.log('Hidden field changed from:', oldValue, 'to:', contributorHiddenInput.value);
+    } else {
+        console.error('contributorHiddenInput is null!');
+    }
+
+    // Hide error if at least one contributor is selected
+    if (contributorError && contributorIds.length > 0) {
+        contributorError.style.display = 'none';
+    }
+}
+</script>
+
+{% endblock %}
+

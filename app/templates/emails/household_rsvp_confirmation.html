@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSVP Confirmed</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background-color: #10B981; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+        <h1 style="margin: 0;">✓ RSVP Confirmed</h1>
+    </div>
+    
+    <div style="background-color: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <p>Hi {{ household.name }},</p>
+        
+        <p>Thank you for responding to the invitation for <strong>{{ event.title }}</strong>!</p>
+        
+        <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0;">Your Household's Responses:</h3>
+            <ul style="list-style: none; padding: 0;">
+                {% for rsvp in rsvps %}
+                <li style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <strong>{{ rsvp.person.full_name }}:</strong> 
+                    <span style="color: {% if rsvp.status == 'attending' %}#10B981{% elif rsvp.status == 'not_attending' %}#EF4444{% else %}#F59E0B{% endif %}; font-weight: bold;">
+                        {{ rsvp.status|replace('_', ' ')|title }}
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        
+        <div style="background-color: #EEF2FF; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0; color: #4F46E5;">Event Details</h3>
+            <p style="margin: 10px 0;"><strong>📅 When:</strong> {{ event.event_date.strftime('%B %d, %Y at %I:%M %p') }}</p>
+            {% if event.venue_address %}
+            <p style="margin: 10px 0;"><strong>📍 Where:</strong> {{ event.venue_address }}</p>
+            {% endif %}
+        </div>
+        
+        <p>We're looking forward to the event!</p>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{{ url_for('public.guest_dashboard', token=invitation.invitation_token, _external=True) }}"
+               style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                View My Invitations
+            </a>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
+            Need to change your RSVP? Click the button above to access your dashboard and manage all your event invitations.
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+
+        <p style="font-size: 12px; color: #9ca3af; text-align: center;">
+            This confirmation was sent to {{ recipient.email }}
+        </p>
+    </div>
+</body>
+</html>
+

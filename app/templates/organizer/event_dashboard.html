@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}{{ event.title }} - Dashboard - {{ app_name }}{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('organizer.dashboard') }}" class="text-gray-700 hover:text-gray-900 mr-4">← Back to Events</a>
+<a href="{{ url_for('organizer.logout') }}" class="text-gray-700 hover:text-gray-900">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex justify-between items-start">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">{{ event.title }}</h1>
+            <p class="text-gray-600">{{ event.event_date|datetime('%B %d, %Y at %I:%M %p') }}</p>
+            <span class="inline-block mt-2 px-3 py-1 text-sm font-semibold rounded-full 
+                {% if event.status == 'draft' %}bg-yellow-100 text-yellow-800
+                {% elif event.status == 'published' %}bg-green-100 text-green-800
+                {% else %}bg-gray-100 text-gray-800{% endif %}">
+                {{ event.status|title }}
+            </span>
+        </div>
+        <div class="space-x-2">
+            <a href="{{ url_for('organizer.edit_event', event_uuid=event.uuid) }}" 
+               class="inline-block bg-gray-200 text-gray-700 px-4 py-2 rounded-md font-semibold hover:bg-gray-300">
+                Edit Event
+            </a>
+            {% if event.status == 'published' %}
+            <a href="{{ event.get_url() }}" target="_blank"
+               class="inline-block bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-700">
+                View Public Page →
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- RSVP Statistics -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Total Invited</div>
+        <div class="text-3xl font-bold text-gray-900">{{ rsvp_stats.total }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Attending</div>
+        <div class="text-3xl font-bold text-green-600">{{ rsvp_stats.attending }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Not Attending</div>
+        <div class="text-3xl font-bold text-red-600">{{ rsvp_stats.not_attending }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">No Response</div>
+        <div class="text-3xl font-bold text-gray-400">{{ rsvp_stats.no_response }}</div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <a href="{{ url_for('organizer.manage_guests', event_uuid=event.uuid) }}"
+       class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition">
+        <h3 class="text-lg font-semibold text-gray-900 mb-2">👥 Manage Guests</h3>
+        <p class="text-gray-600 text-sm">Add, edit, or remove guests and households</p>
+    </a>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-2">📧 Send Invitations</h3>
+        {% if invitation_stats.total == 0 %}
+            <p class="text-gray-600 text-sm mb-3">No households invited yet</p>
+            <a href="{{ url_for('organizer.manage_guests', event_uuid=event.uuid) }}"
+               class="inline-block text-indigo-600 hover:text-indigo-500 text-sm font-medium">
+                Add guests first →
+            </a>
+        {% else %}
+            <p class="text-gray-600 text-sm mb-3">
+                {% if invitation_stats.pending > 0 %}
+                    {{ invitation_stats.pending }} pending
+                    {% if invitation_stats.sent > 0 %}, {{ invitation_stats.sent }} sent{% endif %}
+                {% else %}
+                    All {{ invitation_stats.sent }} invitations sent!
+                {% endif %}
+            </p>
+            {% if invitation_stats.pending > 0 %}
+                <form method="POST" action="{{ url_for('organizer.send_invitations', event_uuid=event.uuid) }}"
+                      onsubmit="return confirm('Send invitations to {{ invitation_stats.pending }} household(s)?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <input type="hidden" name="send_type" value="pending"/>
+                    <button type="submit"
+                            class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-700">
+                        Send to {{ invitation_stats.pending }} Household(s)
+                    </button>
+                </form>
+            {% else %}
+                <form method="POST" action="{{ url_for('organizer.send_invitations', event_uuid=event.uuid) }}"
+                      onsubmit="return confirm('Resend invitations to all {{ invitation_stats.total }} household(s)?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <input type="hidden" name="send_type" value="all"/>
+                    <button type="submit"
+                            class="w-full bg-gray-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-gray-700">
+                        Resend All
+                    </button>
+                </form>
+            {% endif %}
+            {% if invitation_stats.no_email > 0 %}
+                <p class="text-amber-600 text-xs mt-2">
+                    ⚠️ {{ invitation_stats.no_email }} household(s) have no email
+                </p>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <a href="#" class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition">
+        <h3 class="text-lg font-semibold text-gray-900 mb-2">🍽️ Manage Potluck</h3>
+        <p class="text-gray-600 text-sm">Set up potluck items and categories</p>
+    </a>
+</div>
+
+<!-- Event Details -->
+<div class="bg-white rounded-lg shadow mb-8">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-xl font-semibold text-gray-900">Event Details</h2>
+    </div>
+    <div class="px-6 py-4 space-y-4">
+        {% if event.description %}
+        <div>
+            <h3 class="text-sm font-medium text-gray-700 mb-1">Description</h3>
+            <p class="text-gray-900">{{ event.description }}</p>
+        </div>
+        {% endif %}
+        
+        {% if event.venue_address %}
+        <div>
+            <h3 class="text-sm font-medium text-gray-700 mb-1">Venue</h3>
+            <p class="text-gray-900">{{ event.venue_address }}</p>
+            {% if event.venue_map_url %}
+            <a href="{{ event.venue_map_url }}" target="_blank" class="text-indigo-600 hover:text-indigo-500 text-sm">
+                View on map →
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        {% if event.rsvp_deadline %}
+        <div>
+            <h3 class="text-sm font-medium text-gray-700 mb-1">RSVP Deadline</h3>
+            <p class="text-gray-900">{{ event.rsvp_deadline|datetime('%B %d, %Y at %I:%M %p') }}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Invited Households with RSVP Management -->
+<div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-xl font-semibold text-gray-900">Guest List & RSVPs ({{ invitations|length }} households)</h2>
+        <p class="text-sm text-gray-600 mt-1">Click on a guest's RSVP status to update it on their behalf</p>
+    </div>
+
+    {% if invitations %}
+        <div class="divide-y divide-gray-200">
+            {% for invitation in invitations %}
+                <div class="px-6 py-4">
+                    <div class="mb-3">
+                        <h3 class="text-lg font-medium text-gray-900">{{ invitation.household.name }}</h3>
+                    </div>
+
+                    <!-- Household Members RSVPs -->
+                    <div class="ml-4 space-y-2">
+                        {% set household_rsvps = invitation.household.get_rsvps_for_event(event.id) %}
+                        {% for member in invitation.household.active_members %}
+                            {% set member_rsvp = household_rsvps|selectattr('person_id', 'equalto', member.id)|first %}
+                            {% if member_rsvp %}
+                            <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                                <div class="flex items-center space-x-3">
+                                    <span class="text-gray-900">{{ member.full_name }}</span>
+                                    {% if member.role == 'child' %}
+                                        <span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Child</span>
+                                    {% endif %}
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <select
+                                        class="rsvp-status-select text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                                        data-rsvp-id="{{ member_rsvp.id }}"
+                                        data-event-uuid="{{ event.uuid }}"
+                                        data-person-name="{{ member.full_name }}">
+                                        <option value="no_response" {% if member_rsvp.status == 'no_response' %}selected{% endif %}>No Response</option>
+                                        <option value="attending" {% if member_rsvp.status == 'attending' %}selected{% endif %}>✓ Attending</option>
+                                        <option value="not_attending" {% if member_rsvp.status == 'not_attending' %}selected{% endif %}>✗ Not Attending</option>
+                                        <option value="maybe" {% if member_rsvp.status == 'maybe' %}selected{% endif %}>? Maybe</option>
+                                    </select>
+                                    {% if member_rsvp.updated_by_host %}
+                                        <span class="text-xs text-gray-500" title="Updated by host">
+                                            <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                            </svg>
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="px-6 py-12 text-center">
+            <p class="text-gray-500 mb-4">No households invited yet.</p>
+            <a href="{{ url_for('organizer.manage_guests', event_uuid=event.uuid) }}"
+               class="inline-block text-indigo-600 hover:text-indigo-500">
+                Add guests →
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- JavaScript for RSVP Updates -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selects = document.querySelectorAll('.rsvp-status-select');
+
+    // Get CSRF token from meta tag or generate it
+    const csrfToken = '{{ csrf_token() }}';
+
+    selects.forEach(select => {
+        select.addEventListener('change', async function() {
+            const rsvpId = this.dataset.rsvpId;
+            const eventUuid = this.dataset.eventUuid;
+            const personName = this.dataset.personName;
+            const newStatus = this.value;
+            const originalValue = this.querySelector('option[selected]')?.value || 'no_response';
+
+            // Disable select while updating
+            this.disabled = true;
+
+            try {
+                const response = await fetch(`/api/event/${eventUuid}/rsvp/${rsvpId}/update`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({
+                        status: newStatus
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Update the selected attribute
+                    this.querySelectorAll('option').forEach(opt => {
+                        opt.removeAttribute('selected');
+                    });
+                    this.querySelector(`option[value="${newStatus}"]`).setAttribute('selected', 'selected');
+
+                    // Show success message
+                    showNotification(`Updated RSVP for ${personName}`, 'success');
+
+                    // Refresh RSVP stats
+                    refreshRSVPStats(eventUuid);
+                } else {
+                    // Revert to original value
+                    this.value = originalValue;
+                    showNotification(data.error || 'Failed to update RSVP', 'error');
+                }
+            } catch (error) {
+                // Revert to original value
+                this.value = originalValue;
+                showNotification('Network error. Please try again.', 'error');
+            } finally {
+                this.disabled = false;
+            }
+        });
+    });
+
+    function showNotification(message, type) {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `fixed top-4 right-4 px-6 py-3 rounded-md shadow-lg z-50 ${
+            type === 'success' ? 'bg-green-500' : 'bg-red-500'
+        } text-white`;
+        notification.textContent = message;
+
+        document.body.appendChild(notification);
+
+        // Remove after 3 seconds
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    }
+
+    async function refreshRSVPStats(eventUuid) {
+        try {
+            const response = await fetch(`/api/event/${eventUuid}/rsvp-stats`);
+            const stats = await response.json();
+
+            // Update stat cards
+            document.querySelector('.text-3xl.font-bold.text-gray-900').textContent = stats.total;
+            document.querySelector('.text-3xl.font-bold.text-green-600').textContent = stats.attending;
+            document.querySelector('.text-3xl.font-bold.text-red-600').textContent = stats.not_attending;
+            document.querySelector('.text-3xl.font-bold.text-gray-400').textContent = stats.no_response;
+        } catch (error) {
+            console.error('Failed to refresh RSVP stats:', error);
+        }
+    }
+});
+</script>
+{% endblock %}
+

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}{{ household.name }} - {{ app_name }}{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('guests.index') }}" class="text-gray-700 hover:text-gray-900 mr-4">← Back to Guests</a>
+<a href="{{ url_for('organizer.dashboard') }}" class="text-gray-700 hover:text-gray-900 mr-4">Dashboard</a>
+<a href="{{ url_for('organizer.logout') }}" class="text-gray-700 hover:text-gray-900">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex justify-between items-start">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">{{ household.name }}</h1>
+            {% if household.address %}
+            <p class="text-gray-600">📍 {{ household.address|replace('\n', ', ') }}</p>
+            {% endif %}
+        </div>
+        <div class="space-x-2">
+            <a href="{{ url_for('guests.edit_household', household_id=household.id) }}" 
+               class="inline-block bg-gray-200 text-gray-700 px-4 py-2 rounded-md font-semibold hover:bg-gray-300">
+                Edit Household
+            </a>
+            <form method="POST" action="{{ url_for('guests.delete_household', household_id=household.id) }}"
+                  class="inline-block"
+                  onsubmit="return confirm('Are you sure you want to archive this household? All members will be marked as left.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit"
+                        class="bg-red-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-red-700">
+                    Archive Household
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Household Members -->
+<div class="bg-white rounded-lg shadow mb-8">
+    <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h2 class="text-xl font-semibold text-gray-900">Household Members ({{ members|length }})</h2>
+        <a href="{{ url_for('guests.add_person', household_id=household.id) }}" 
+           class="bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-700 text-sm">
+            + Add Person
+        </a>
+    </div>
+    
+    {% if members %}
+        <ul class="divide-y divide-gray-200">
+            {% for member in members %}
+                <li class="px-6 py-4">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="flex items-center">
+                                <h3 class="text-lg font-medium text-gray-900">
+                                    {{ member.full_name }}
+                                </h3>
+                                
+                                {% if member.role == 'child' %}
+                                <span class="ml-2 inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
+                                    Child
+                                </span>
+                                {% else %}
+                                <span class="ml-2 inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                                    Adult
+                                </span>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="mt-2 space-y-1 text-sm text-gray-600">
+                                {% if member.email %}
+                                <div>
+                                    📧 <a href="mailto:{{ member.email }}" class="text-indigo-600 hover:text-indigo-500">
+                                        {{ member.email }}
+                                    </a>
+                                </div>
+                                {% endif %}
+
+                                {% if member.phone %}
+                                <div>
+                                    📞 <a href="tel:{{ member.phone }}" class="text-indigo-600 hover:text-indigo-500">
+                                        {{ member.phone }}
+                                    </a>
+                                </div>
+                                {% endif %}
+
+                                {% if member.tags %}
+                                <div class="mt-2 flex flex-wrap gap-1">
+                                    {% for tag in member.tags %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                        🥗 {{ tag.name }}
+                                    </span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="ml-4 flex space-x-2">
+                            <a href="{{ url_for('guests.edit_person', person_id=member.id) }}" 
+                               class="text-gray-600 hover:text-gray-500 text-sm font-medium">
+                                Edit
+                            </a>
+                            <form method="POST" action="{{ url_for('guests.delete_person', person_id=member.id) }}"
+                                  class="inline"
+                                  onsubmit="return confirm('Are you sure you want to remove {{ member.full_name }} from this household?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="text-red-600 hover:text-red-500 text-sm font-medium">
+                                    Remove
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="px-6 py-12 text-center">
+            <p class="text-gray-500 mb-4">No members in this household yet.</p>
+            <a href="{{ url_for('guests.add_person', household_id=household.id) }}" 
+               class="inline-block text-indigo-600 hover:text-indigo-500">
+                Add the first person →
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Events this household is invited to -->
+<div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-xl font-semibold text-gray-900">Event Invitations</h2>
+    </div>
+    
+    {% set invitations = household.invitations.all() %}
+    {% if invitations %}
+        <ul class="divide-y divide-gray-200">
+            {% for invitation in invitations %}
+                <li class="px-6 py-4">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <a href="{{ url_for('organizer.event_dashboard', event_uuid=invitation.event.uuid) }}" 
+                               class="text-lg font-medium text-indigo-600 hover:text-indigo-500">
+                                {{ invitation.event.title }}
+                            </a>
+                            <p class="text-sm text-gray-600">
+                                {{ invitation.event.event_date|datetime('%B %d, %Y') }}
+                            </p>
+                        </div>
+                        <span class="text-sm text-gray-500">
+                            Invited {{ invitation.invited_at|datetime('%b %d, %Y') }}
+                        </span>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="px-6 py-8 text-center text-gray-500 text-sm">
+            This household hasn't been invited to any events yet.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+

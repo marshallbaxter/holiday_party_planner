@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - {{ app_name }}{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('guests.view_household', household_id=household.id) }}" class="text-gray-700 hover:text-gray-900 mr-4">← Back to {{ household.name }}</a>
+<a href="{{ url_for('organizer.logout') }}" class="text-gray-700 hover:text-gray-900">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">{{ title }}</h1>
+    <p class="text-gray-600 mb-8">Household: {{ household.name }}</p>
+    
+    <div class="bg-white rounded-lg shadow-md p-8">
+        <form method="POST" novalidate>
+            {{ form.hidden_tag() }}
+            
+            <!-- First Name -->
+            <div class="mb-6">
+                {{ form.first_name.label(class="block text-sm font-medium text-gray-700 mb-2") }}
+                {{ form.first_name(class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" + (" border-red-500" if form.first_name.errors else "")) }}
+                {% if form.first_name.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.first_name.errors[0] }}</p>
+                {% endif %}
+            </div>
+            
+            <!-- Last Name -->
+            <div class="mb-6">
+                {{ form.last_name.label(class="block text-sm font-medium text-gray-700 mb-2") }}
+                {{ form.last_name(class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" + (" border-red-500" if form.last_name.errors else "")) }}
+                {% if form.last_name.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.last_name.errors[0] }}</p>
+                {% endif %}
+            </div>
+            
+            <!-- Email -->
+            <div class="mb-6">
+                {{ form.email.label(class="block text-sm font-medium text-gray-700 mb-2") }}
+                {{ form.email(class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" + (" border-red-500" if form.email.errors else "")) }}
+                {% if form.email.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.email.errors[0] }}</p>
+                {% endif %}
+                <p class="mt-1 text-sm text-gray-500">
+                    Optional: Used for sending invitations and notifications
+                </p>
+            </div>
+            
+            <!-- Phone -->
+            <div class="mb-6">
+                {{ form.phone.label(class="block text-sm font-medium text-gray-700 mb-2") }}
+                {{ form.phone(class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500") }}
+                {% if form.phone.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.phone.errors[0] }}</p>
+                {% endif %}
+                <p class="mt-1 text-sm text-gray-500">
+                    Optional: Contact phone number
+                </p>
+            </div>
+            
+            <!-- Role -->
+            <div class="mb-6">
+                {{ form.role.label(class="block text-sm font-medium text-gray-700 mb-2") }}
+                {{ form.role(class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500") }}
+                {% if form.role.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.role.errors[0] }}</p>
+                {% endif %}
+                <p class="mt-1 text-sm text-gray-500">
+                    Select "Child" for anyone under 18
+                </p>
+            </div>
+
+            {% if person %}
+            <!-- Dietary Restrictions / Tags -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Dietary Restrictions & Preferences
+                </label>
+
+                <!-- Current Tags -->
+                <div id="current-tags" class="mb-3 min-h-[40px] flex flex-wrap gap-2">
+                    {% if person.tags %}
+                        {% for tag in person.tags %}
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
+                            {{ tag.name }}
+                            <button type="button"
+                                    class="ml-2 text-indigo-600 hover:text-indigo-800 focus:outline-none"
+                                    onclick="removeTag('{{ tag.name }}', {{ person.id }})">
+                                ×
+                            </button>
+                        </span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="text-sm text-gray-500">No dietary restrictions added yet</span>
+                    {% endif %}
+                </div>
+
+                <!-- Add Tag Input -->
+                <div class="flex gap-2">
+                    <div class="flex-1 relative">
+                        <input type="text"
+                               id="tag-input"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                               placeholder="Type to add (e.g., vegetarian, gluten-free, nut allergy)"
+                               autocomplete="off">
+                        <!-- Autocomplete dropdown -->
+                        <div id="tag-suggestions"
+                             class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        </div>
+                    </div>
+                    <button type="button"
+                            id="add-tag-btn"
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                            onclick="addTag({{ person.id }})">
+                        Add
+                    </button>
+                </div>
+
+                <p class="mt-2 text-sm text-gray-500">
+                    Add dietary restrictions, allergies, or food preferences. Start typing to see suggestions.
+                </p>
+            </div>
+            {% endif %}
+
+            <!-- Hidden household field -->
+            {{ form.household_id(type="hidden") }}
+            
+            <!-- Submit Buttons -->
+            <div class="flex justify-end space-x-3">
+                <a href="{{ url_for('guests.view_household', household_id=household.id) }}" 
+                   class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                    Cancel
+                </a>
+                <button type="submit" 
+                        class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                    {% if person %}Save Changes{% else %}Add Person{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    {% if not person %}
+    <div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
+        <h3 class="text-sm font-medium text-blue-800 mb-2">💡 About Invitations</h3>
+        <p class="text-sm text-blue-700">
+            Invitations will be sent to all household members with email addresses.
+            Anyone who receives an invitation can RSVP on behalf of the entire household.
+        </p>
+    </div>
+    {% endif %}
+</div>
+
+{% if person %}
+<script>
+// Tag management JavaScript
+let tagSuggestionsTimeout = null;
+
+// Get tag input element
+const tagInput = document.getElementById('tag-input');
+const tagSuggestions = document.getElementById('tag-suggestions');
+
+// Handle tag input for autocomplete
+tagInput.addEventListener('input', function() {
+    const query = this.value.trim();
+
+    // Clear previous timeout
+    if (tagSuggestionsTimeout) {
+        clearTimeout(tagSuggestionsTimeout);
+    }
+
+    // Hide suggestions if query is empty
+    if (query.length === 0) {
+        tagSuggestions.classList.add('hidden');
+        return;
+    }
+
+    // Debounce API call
+    tagSuggestionsTimeout = setTimeout(() => {
+        fetchTagSuggestions(query);
+    }, 300);
+});
+
+// Handle Enter key to add tag
+tagInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addTag({{ person.id }});
+    }
+});
+
+// Fetch tag suggestions from API
+async function fetchTagSuggestions(query) {
+    try {
+        const response = await fetch(`/api/tags?q=${encodeURIComponent(query)}&limit=10`);
+        const data = await response.json();
+
+        if (data.tags && data.tags.length > 0) {
+            displayTagSuggestions(data.tags);
+        } else {
+            tagSuggestions.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error fetching tag suggestions:', error);
+    }
+}
+
+// Display tag suggestions
+function displayTagSuggestions(tags) {
+    tagSuggestions.innerHTML = '';
+
+    tags.forEach(tag => {
+        const div = document.createElement('div');
+        div.className = 'px-4 py-2 hover:bg-gray-100 cursor-pointer flex justify-between items-center';
+        div.innerHTML = `
+            <span>${tag.name}</span>
+            <span class="text-xs text-gray-500">${tag.usage_count} ${tag.usage_count === 1 ? 'person' : 'people'}</span>
+        `;
+        div.onclick = () => {
+            tagInput.value = tag.name;
+            tagSuggestions.classList.add('hidden');
+            addTag({{ person.id }});
+        };
+        tagSuggestions.appendChild(div);
+    });
+
+    tagSuggestions.classList.remove('hidden');
+}
+
+// Hide suggestions when clicking outside
+document.addEventListener('click', function(e) {
+    if (!tagInput.contains(e.target) && !tagSuggestions.contains(e.target)) {
+        tagSuggestions.classList.add('hidden');
+    }
+});
+
+// Add tag to person
+async function addTag(personId) {
+    const tagName = tagInput.value.trim();
+
+    if (!tagName) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/person/${personId}/tags`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({
+                tag_name: tagName,
+                category: 'dietary'
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            // Clear input
+            tagInput.value = '';
+            tagSuggestions.classList.add('hidden');
+
+            // Reload page to show updated tags
+            location.reload();
+        } else {
+            alert(data.error || 'Failed to add tag');
+        }
+    } catch (error) {
+        console.error('Error adding tag:', error);
+        alert('Failed to add tag. Please try again.');
+    }
+}
+
+// Remove tag from person
+async function removeTag(tagName, personId) {
+    if (!confirm(`Remove "${tagName}" from dietary restrictions?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/person/${personId}/tags/${encodeURIComponent(tagName)}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token() }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            // Reload page to show updated tags
+            location.reload();
+        } else {
+            alert(data.error || 'Failed to remove tag');
+        }
+    } catch (error) {
+        console.error('Error removing tag:', error);
+        alert('Failed to remove tag. Please try again.');
+    }
+}
+</script>
+{% endif %}
+{% endblock %}
+

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="text-center">
+    <h1 class="text-4xl font-bold text-gray-900 mb-4">
+        Welcome to {{ app_name }}
+    </h1>
+    <p class="text-xl text-gray-600 mb-8">
+        Plan and manage your family holiday events with ease
+    </p>
+    
+    <div class="max-w-3xl mx-auto bg-white rounded-lg shadow-md p-8 mb-8">
+        <h2 class="text-2xl font-semibold mb-4">Features</h2>
+        <ul class="text-left space-y-3 text-gray-700">
+            <li class="flex items-start">
+                <svg class="h-6 w-6 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Send invitations via email</span>
+            </li>
+            <li class="flex items-start">
+                <svg class="h-6 w-6 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Collect and manage RSVPs by household</span>
+            </li>
+            <li class="flex items-start">
+                <svg class="h-6 w-6 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Coordinate potluck items with dietary tags</span>
+            </li>
+            <li class="flex items-start">
+                <svg class="h-6 w-6 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Automated reminders and notifications</span>
+            </li>
+            <li class="flex items-start">
+                <svg class="h-6 w-6 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Copy guest lists year-to-year</span>
+            </li>
+        </ul>
+    </div>
+
+    <div class="space-x-4">
+        <a href="{{ url_for('organizer.login') }}" class="inline-block bg-indigo-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-indigo-700">
+            Organizer Login
+        </a>
+        <a href="#" class="inline-block bg-gray-200 text-gray-700 px-6 py-3 rounded-md font-semibold hover:bg-gray-300">
+            Learn More
+        </a>
+    </div>
+</div>
+{% endblock %}
+

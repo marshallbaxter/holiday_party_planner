@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Browse Households - {{ event.title }} - {{ app_name }}{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('organizer.manage_guests', event_uuid=event.uuid) }}" class="text-gray-700 hover:text-gray-900 mr-4">← Back to Guests</a>
+<a href="{{ url_for('organizer.logout') }}" class="text-gray-700 hover:text-gray-900">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">Browse & Invite Households</h1>
+    <p class="text-gray-600">{{ event.title }}</p>
+</div>
+
+<!-- Statistics -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="text-sm font-medium text-gray-600 mb-1">Total Households</div>
+        <div class="text-2xl font-bold text-gray-900">{{ total_count }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="text-sm font-medium text-gray-600 mb-1">Already Invited</div>
+        <div class="text-2xl font-bold text-green-600">{{ invited_count }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="text-sm font-medium text-gray-600 mb-1">Available to Invite</div>
+        <div class="text-2xl font-bold text-indigo-600">{{ total_count - invited_count }}</div>
+    </div>
+</div>
+
+<!-- Search and Actions -->
+<div class="bg-white rounded-lg shadow mb-6">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <div class="flex justify-between items-center">
+            <h2 class="text-xl font-semibold text-gray-900">Select Households to Invite</h2>
+            <div class="flex space-x-2">
+                <button type="button" id="select-all-btn" class="text-sm text-indigo-600 hover:text-indigo-500 font-medium">
+                    Select All Available
+                </button>
+                <span class="text-gray-300">|</span>
+                <button type="button" id="deselect-all-btn" class="text-sm text-gray-600 hover:text-gray-500 font-medium">
+                    Deselect All
+                </button>
+            </div>
+        </div>
+        
+        <!-- Search Form -->
+        <form method="GET" action="{{ url_for('organizer.browse_households', event_uuid=event.uuid) }}" class="mt-4">
+            <div class="flex gap-2">
+                <input type="text" 
+                       name="search" 
+                       value="{{ search_query }}"
+                       placeholder="Search households by name..."
+                       class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                <button type="submit" 
+                        class="bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 font-medium">
+                    Search
+                </button>
+                {% if search_query %}
+                <a href="{{ url_for('organizer.browse_households', event_uuid=event.uuid) }}"
+                   class="bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 font-medium">
+                    Clear
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+    
+    <!-- Invitation Form -->
+    <form method="POST" action="{{ url_for('organizer.invite_households', event_uuid=event.uuid) }}" id="invite-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        {% if household_data %}
+            <ul class="divide-y divide-gray-200">
+                {% for data in household_data %}
+                    <li class="px-6 py-4 hover:bg-gray-50 {% if data.is_invited %}bg-green-50{% endif %}">
+                        <div class="flex items-start">
+                            <div class="flex items-center h-5 mt-1">
+                                {% if not data.is_invited %}
+                                <input type="checkbox" 
+                                       name="household_ids" 
+                                       value="{{ data.household.id }}"
+                                       class="household-checkbox rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                {% else %}
+                                <span class="text-green-600 text-xl">✓</span>
+                                {% endif %}
+                            </div>
+                            <div class="ml-3 flex-1">
+                                <div class="flex justify-between items-start">
+                                    <div class="flex-1">
+                                        <h3 class="text-lg font-medium text-gray-900">
+                                            {{ data.household.name }}
+                                            {% if data.is_invited %}
+                                                <span class="ml-2 text-sm font-normal text-green-600">(Already Invited)</span>
+                                            {% endif %}
+                                        </h3>
+                                        
+                                        <div class="mt-1 text-sm text-gray-600">
+                                            <span>👥 {{ data.member_count }} member(s)</span>
+                                            
+                                            {% if data.has_email %}
+                                                <span class="ml-3">
+                                                    📧 Contacts: 
+                                                    {% for contact in data.contacts %}
+                                                        {{ contact.full_name }}{% if not loop.last %}, {% endif %}
+                                                    {% endfor %}
+                                                </span>
+                                            {% else %}
+                                                <span class="ml-3 text-amber-600">⚠️ No email addresses</span>
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <!-- Member names -->
+                                        {% if data.household.active_members %}
+                                        <div class="mt-2 text-sm text-gray-600">
+                                            {% for member in data.household.active_members %}
+                                                <span class="inline-block bg-gray-100 rounded px-2 py-0.5 mr-2 mb-1">
+                                                    {{ member.full_name }}
+                                                    {% if member.role == 'child' %}
+                                                        <span class="text-xs text-gray-500">(child)</span>
+                                                    {% endif %}
+                                                </span>
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="px-6 py-12 text-center">
+                <p class="text-gray-500 mb-4">
+                    {% if search_query %}
+                        No households found matching "{{ search_query }}"
+                    {% else %}
+                        No households available in the system.
+                    {% endif %}
+                </p>
+                {% if not search_query %}
+                <a href="{{ url_for('guests.create_household') }}" 
+                   class="inline-block text-indigo-600 hover:text-indigo-500">
+                    Create your first household →
+                </a>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        <!-- Submit Button (sticky at bottom) -->
+        {% if household_data %}
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 sticky bottom-0">
+            <div class="flex justify-between items-center">
+                <div>
+                    <span class="text-sm text-gray-600">
+                        <span id="selected-count">0</span> household(s) selected
+                    </span>
+                </div>
+                <div class="flex space-x-3">
+                    <a href="{{ url_for('organizer.manage_guests', event_uuid=event.uuid) }}"
+                       class="bg-white text-gray-700 px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-50 font-medium">
+                        Cancel
+                    </a>
+                    <button type="submit"
+                            id="invite-btn"
+                            class="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled>
+                        Invite Selected Households
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Help Text -->
+<div class="bg-blue-50 border border-blue-200 rounded-md p-4">
+    <h3 class="text-sm font-medium text-blue-800 mb-2">💡 About Inviting Households</h3>
+    <p class="text-sm text-blue-700 mb-2">
+        Select the households you want to invite to this event. When you invite a household:
+    </p>
+    <ul class="text-sm text-blue-700 list-disc list-inside space-y-1">
+        <li>An invitation record will be created for the household</li>
+        <li>RSVP records will be created for all household members</li>
+        <li>You can send invitation emails later from the Manage Guests page</li>
+        <li>Households without email addresses can still be invited (for manual notification)</li>
+    </ul>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('.household-checkbox');
+    const selectAllBtn = document.getElementById('select-all-btn');
+    const deselectAllBtn = document.getElementById('deselect-all-btn');
+    const selectedCount = document.getElementById('selected-count');
+    const inviteBtn = document.getElementById('invite-btn');
+
+    function updateSelectedCount() {
+        const checked = document.querySelectorAll('.household-checkbox:checked').length;
+        selectedCount.textContent = checked;
+        inviteBtn.disabled = checked === 0;
+    }
+
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedCount);
+    });
+
+    selectAllBtn.addEventListener('click', function() {
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+        updateSelectedCount();
+    });
+
+    deselectAllBtn.addEventListener('click', function() {
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        updateSelectedCount();
+    });
+
+    // Confirm before submitting if many households selected
+    document.getElementById('invite-form').addEventListener('submit', function(e) {
+        const checked = document.querySelectorAll('.household-checkbox:checked').length;
+        if (checked > 10) {
+            if (!confirm(`You are about to invite ${checked} households. Continue?`)) {
+                e.preventDefault();
+            }
+        }
+    });
+
+    // Initial count
+    updateSelectedCount();
+});
+</script>
+{% endblock %}
+

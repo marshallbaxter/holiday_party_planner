@@ -1,0 +1,71 @@
+# Systemd service file for Holiday Party Planner
+# 
+# Installation:
+#   1. Edit the paths and user/group below to match your environment
+#   2. Copy to systemd directory: sudo cp deploy/holiday-party.service /etc/systemd/system/
+#   3. Reload systemd: sudo systemctl daemon-reload
+#   4. Enable service: sudo systemctl enable holiday-party
+#   5. Start service: sudo systemctl start holiday-party
+#   6. Check status: sudo systemctl status holiday-party
+#
+# Logs:
+#   sudo journalctl -u holiday-party -f
+
+[Unit]
+Description=Holiday Party Planner Flask Application
+Documentation=https://github.com/yourusername/holiday_party_planner
+After=network.target
+
+[Service]
+Type=notify
+User=holiday-party
+Group=holiday-party
+WorkingDirectory=/home/holiday-party/app
+
+# Environment
+Environment="PATH=/home/holiday-party/app/venv/bin"
+Environment="FLASK_ENV=production"
+EnvironmentFile=/home/holiday-party/app/.env
+
+# Gunicorn command
+ExecStart=/home/holiday-party/app/venv/bin/gunicorn \
+    --workers 4 \
+    --worker-class sync \
+    --bind unix:/run/holiday-party/holiday-party.sock \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --keep-alive 5 \
+    --max-requests 1000 \
+    --max-requests-jitter 50 \
+    --access-logfile /home/holiday-party/app/logs/access.log \
+    --error-logfile /home/holiday-party/app/logs/error.log \
+    --log-level info \
+    --capture-output \
+    "run:app"
+
+# Reload gracefully
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=always
+RestartSec=10
+
+# Security settings
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/holiday-party/app/logs /home/holiday-party/app/instance /home/holiday-party/app/backups
+RuntimeDirectory=holiday-party
+RuntimeDirectoryMode=0755
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+[Install]
+WantedBy=multi-user.target
+

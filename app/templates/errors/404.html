@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="text-center">
+    <h1 class="text-6xl font-bold text-gray-900 mb-4">404</h1>
+    <p class="text-2xl text-gray-600 mb-8">Page not found</p>
+    <p class="text-gray-500 mb-8">The page you're looking for doesn't exist.</p>
+    <a href="{{ url_for('public.index') }}" class="inline-block bg-indigo-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-indigo-700">
+        Go Home
+    </a>
+</div>
+{% endblock %}
+

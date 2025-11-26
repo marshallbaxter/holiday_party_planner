@@ -1,0 +1,234 @@
+"""Potluck-related models."""
+from datetime import datetime
+from app import db
+
+
+class PotluckItemContributor(db.Model):
+    """Junction table for many-to-many relationship between potluck items and contributors."""
+
+    __tablename__ = "potluck_item_contributors"
+
+    id = db.Column(db.Integer, primary_key=True)
+    potluck_item_id = db.Column(
+        db.Integer, db.ForeignKey("potluck_items.id", ondelete="CASCADE"), nullable=False
+    )
+    person_id = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=False)
+    added_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    # Relationships
+    potluck_item = db.relationship("PotluckItem", back_populates="contributor_associations")
+    person = db.relationship("Person")
+
+    # Constraints
+    __table_args__ = (
+        db.UniqueConstraint(
+            "potluck_item_id", "person_id", name="unique_item_contributor"
+        ),
+        db.Index("idx_potluck_item_contributors", "potluck_item_id"),
+        db.Index("idx_contributor_person", "person_id"),
+    )
+
+    def __repr__(self):
+        return f"<PotluckItemContributor item_id={self.potluck_item_id} person_id={self.person_id}>"
+
+
+class PotluckItem(db.Model):
+    """Represents a potluck item for an event."""
+
+    __tablename__ = "potluck_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    category = db.Column(
+        db.String(50), nullable=False, default="other"
+    )  # main, side, dessert, drink, other
+    dietary_tags = db.Column(db.JSON, nullable=True)  # Array of dietary tags
+    notes = db.Column(db.Text, nullable=True)
+    quantity_needed = db.Column(db.Integer, nullable=True, default=1)
+    created_by_person_id = db.Column(
+        db.Integer, db.ForeignKey("persons.id"), nullable=True
+    )  # Keep for backward compatibility and tracking original creator
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    # Relationships
+    event = db.relationship("Event", back_populates="potluck_items")
+    created_by = db.relationship("Person", foreign_keys=[created_by_person_id])
+    claims = db.relationship("PotluckClaim", back_populates="item", lazy="dynamic")
+    contributor_associations = db.relationship(
+        "PotluckItemContributor",
+        back_populates="potluck_item",
+        cascade="all, delete-orphan",
+        lazy="joined"
+    )
+
+    def __repr__(self):
+        return f"<PotluckItem {self.name}>"
+
+    @property
+    def is_claimed(self):
+        """Check if item has been claimed."""
+        return self.claims.count() > 0
+
+    @property
+    def claim_count(self):
+        """Get number of claims for this item."""
+        return self.claims.count()
+
+    @property
+    def is_fully_claimed(self):
+        """Check if item has been fully claimed."""
+        if not self.quantity_needed:
+            return self.is_claimed
+        return self.claim_count >= self.quantity_needed
+
+    @property
+    def remaining_quantity(self):
+        """Get remaining quantity needed."""
+        if not self.quantity_needed:
+            return 0 if self.is_claimed else 1
+        return max(0, self.quantity_needed - self.claim_count)
+
+    def get_dietary_tags_list(self):
+        """Get dietary tags as a list."""
+        if not self.dietary_tags:
+            return []
+        return self.dietary_tags if isinstance(self.dietary_tags, list) else []
+
+    @property
+    def contributors(self):
+        """Get list of Person objects who are contributors."""
+        return [assoc.person for assoc in self.contributor_associations]
+
+    @property
+    def contributor_ids(self):
+        """Get list of contributor person IDs."""
+        return [assoc.person_id for assoc in self.contributor_associations]
+
+    def is_contributor(self, person_id):
+        """Check if a person is a contributor to this item."""
+        return person_id in self.contributor_ids
+
+    def get_contributors_display(self):
+        """Get formatted string of contributor names.
+
+        Returns:
+            String like "John Doe", "John and Jane Doe", or "John, Jane, and Tommy Doe"
+        """
+        contributors = self.contributors
+        if not contributors:
+            # Fallback to created_by for backward compatibility
+            if self.created_by:
+                return self.created_by.full_name
+            return "Unknown"
+
+        if len(contributors) == 1:
+            return contributors[0].full_name
+        elif len(contributors) == 2:
+            return f"{contributors[0].full_name} and {contributors[1].full_name}"
+        else:
+            # Three or more: "John, Jane, and Tommy"
+            names = [c.full_name for c in contributors[:-1]]
+            return f"{', '.join(names)}, and {contributors[-1].full_name}"
+
+    def add_contributor(self, person_id):
+        """Add a contributor to this item."""
+        if not self.is_contributor(person_id):
+            contributor = PotluckItemContributor(
+                potluck_item_id=self.id,
+                person_id=person_id
+            )
+            self.contributor_associations.append(contributor)
+
+    def remove_contributor(self, person_id):
+        """Remove a contributor from this item."""
+        self.contributor_associations = [
+            assoc for assoc in self.contributor_associations
+            if assoc.person_id != person_id
+        ]
+
+    def set_contributors(self, person_ids):
+        """Set the contributors for this item, replacing any existing ones."""
+        # Delete existing contributors from database
+        deleted_count = PotluckItemContributor.query.filter_by(potluck_item_id=self.id).delete()
+
+        # Flush the delete operation to ensure it's executed
+        db.session.flush()
+
+        # Expire the contributor_associations relationship to force reload
+        db.session.expire(self, ['contributor_associations'])
+
+        # Add new contributors
+        for person_id in person_ids:
+            contributor = PotluckItemContributor(
+                potluck_item_id=self.id,
+                person_id=person_id
+            )
+            db.session.add(contributor)
+
+        # Flush to ensure new contributors are added
+        db.session.flush()
+
+    def to_dict(self):
+        """Convert potluck item to dictionary."""
+        return {
+            "id": self.id,
+            "event_id": self.event_id,
+            "name": self.name,
+            "category": self.category,
+            "dietary_tags": self.get_dietary_tags_list(),
+            "notes": self.notes,
+            "quantity_needed": self.quantity_needed,
+            "claim_count": self.claim_count,
+            "is_fully_claimed": self.is_fully_claimed,
+            "remaining_quantity": self.remaining_quantity,
+            "contributors": [c.full_name for c in self.contributors],
+            "contributor_ids": self.contributor_ids,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PotluckClaim(db.Model):
+    """Represents a claim on a potluck item by a person/household."""
+
+    __tablename__ = "potluck_claims"
+
+    id = db.Column(db.Integer, primary_key=True)
+    potluck_item_id = db.Column(
+        db.Integer, db.ForeignKey("potluck_items.id"), nullable=False
+    )
+    person_id = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=False)
+    household_id = db.Column(
+        db.Integer, db.ForeignKey("households.id"), nullable=True
+    )
+    claimed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    notes = db.Column(db.Text, nullable=True)
+
+    # Relationships
+    item = db.relationship("PotluckItem", back_populates="claims")
+    person = db.relationship("Person", back_populates="potluck_claims")
+    household = db.relationship("Household")
+
+    # Constraints
+    __table_args__ = (
+        db.UniqueConstraint(
+            "potluck_item_id", "person_id", name="unique_item_person_claim"
+        ),
+        db.Index("idx_potluck_claims", "potluck_item_id"),
+    )
+
+    def __repr__(self):
+        return f"<PotluckClaim item_id={self.potluck_item_id} person_id={self.person_id}>"
+
+    def to_dict(self):
+        """Convert potluck claim to dictionary."""
+        return {
+            "id": self.id,
+            "potluck_item_id": self.potluck_item_id,
+            "person_id": self.person_id,
+            "household_id": self.household_id,
+            "claimed_at": self.claimed_at.isoformat() if self.claimed_at else None,
+            "notes": self.notes,
+            "person_name": self.person.full_name if self.person else None,
+        }
+

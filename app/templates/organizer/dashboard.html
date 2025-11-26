@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - {{ app_name }}{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('organizer.logout') }}" class="text-gray-700 hover:text-gray-900">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome, {{ person.first_name }}!</h1>
+    <p class="text-gray-600">Manage your holiday events</p>
+</div>
+
+<div class="mb-6 flex space-x-4">
+    <a href="{{ url_for('organizer.create_event') }}" class="inline-block bg-indigo-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-indigo-700">
+        Create New Event
+    </a>
+    <a href="{{ url_for('guests.index') }}" class="inline-block bg-gray-200 text-gray-700 px-6 py-3 rounded-md font-semibold hover:bg-gray-300">
+        👥 Manage Guests
+    </a>
+</div>
+
+<!-- Events I'm Hosting -->
+<div class="bg-white rounded-lg shadow-md mb-8">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-xl font-semibold text-gray-900">Events I'm Hosting</h2>
+    </div>
+
+    {% if events %}
+        <ul class="divide-y divide-gray-200">
+            {% for event in events %}
+                <li class="px-6 py-4 hover:bg-gray-50">
+                    <a href="{{ url_for('organizer.event_dashboard', event_uuid=event.uuid) }}" class="block">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-lg font-medium text-gray-900">{{ event.title }}</h3>
+                                <p class="text-sm text-gray-600 mt-1">
+                                    {{ event.event_date|datetime('%B %d, %Y at %I:%M %p') }}
+                                </p>
+                                <span class="inline-block mt-2 px-2 py-1 text-xs font-semibold rounded-full
+                                    {% if event.status == 'draft' %}bg-yellow-100 text-yellow-800
+                                    {% elif event.status == 'published' %}bg-green-100 text-green-800
+                                    {% else %}bg-gray-100 text-gray-800{% endif %}">
+                                    {{ event.status|title }}
+                                </span>
+                            </div>
+                            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                        </div>
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="px-6 py-12 text-center">
+            <p class="text-gray-500">You haven't created any events yet.</p>
+            <a href="{{ url_for('organizer.create_event') }}" class="inline-block mt-4 text-indigo-600 hover:text-indigo-500">
+                Create your first event →
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Events I'm Invited To -->
+{% if household %}
+<div class="bg-white rounded-lg shadow-md">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-xl font-semibold text-gray-900">Events I'm Invited To</h2>
+        <p class="text-sm text-gray-600 mt-1">As a member of {{ household.name }}</p>
+    </div>
+
+    {% if invited_events %}
+        <div class="divide-y divide-gray-200">
+            {% for item in invited_events %}
+            {% set event = item.event %}
+            {% set invitation = item.invitation %}
+            {% set rsvps = item.rsvps %}
+            {% set summary = item.summary %}
+
+            <div class="px-6 py-4 hover:bg-gray-50">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <h3 class="text-lg font-medium text-gray-900">{{ event.title }}</h3>
+                        <p class="text-sm text-gray-600 mt-1">
+                            {{ event.event_date|datetime('%B %d, %Y at %I:%M %p') }}
+                        </p>
+                        {% if event.venue_address %}
+                        <p class="text-sm text-gray-500 mt-1">
+                            📍 {{ event.venue_address }}
+                        </p>
+                        {% endif %}
+
+                        <!-- RSVP Status Summary -->
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            {% for rsvp in rsvps %}
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium
+                                {% if rsvp.status == 'attending' %}bg-green-100 text-green-800
+                                {% elif rsvp.status == 'not_attending' %}bg-red-100 text-red-800
+                                {% elif rsvp.status == 'maybe' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-gray-100 text-gray-800{% endif %}">
+                                {{ rsvp.person.first_name }}:
+                                {% if rsvp.status == 'attending' %}✓ Attending
+                                {% elif rsvp.status == 'not_attending' %}✗ Not Attending
+                                {% elif rsvp.status == 'maybe' %}? Maybe
+                                {% else %}No Response{% endif %}
+                            </span>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Summary Counts -->
+                        <p class="text-xs text-gray-500 mt-2">
+                            {{ summary.attending }} attending,
+                            {{ summary.not_attending }} not attending,
+                            {{ summary.maybe }} maybe,
+                            {{ summary.no_response }} no response
+                        </p>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="ml-4 flex flex-col space-y-2">
+                        <a href="{{ url_for('public.rsvp_form', event_uuid=event.uuid, token=invitation.invitation_token) }}"
+                           class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 whitespace-nowrap">
+                            {% if summary.no_response == rsvps|length %}
+                                RSVP Now
+                            {% else %}
+                                Update RSVP
+                            {% endif %}
+                        </a>
+                        <a href="{{ url_for('public.event_detail', event_uuid=event.uuid) }}"
+                           class="inline-flex items-center px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-300 whitespace-nowrap">
+                            View Details
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="px-6 py-12 text-center">
+            <svg class="h-12 w-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+            </svg>
+            <p class="text-gray-500">You haven't been invited to any events as a guest.</p>
+        </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+

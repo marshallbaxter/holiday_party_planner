@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Guests - {{ event.title }} - {{ app_name }}{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('organizer.event_dashboard', event_uuid=event.uuid) }}" class="text-gray-700 hover:text-gray-900 mr-4">← Back to Event</a>
+<a href="{{ url_for('organizer.logout') }}" class="text-gray-700 hover:text-gray-900">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Manage Guests</h1>
+            <p class="text-gray-600">{{ event.title }}</p>
+        </div>
+        <a href="{{ url_for('organizer.browse_households', event_uuid=event.uuid) }}"
+           class="bg-indigo-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-indigo-700 shadow-sm">
+            + Add Households
+        </a>
+    </div>
+</div>
+
+<!-- Statistics -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Invited Households</div>
+        <div class="text-3xl font-bold text-gray-900">{{ invitations|length }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Total Guests</div>
+        <div class="text-3xl font-bold text-gray-900">
+            {% set total_guests = namespace(count=0) %}
+            {% for invitation in invitations %}
+                {% set total_guests.count = total_guests.count + invitation.household.active_members|length %}
+            {% endfor %}
+            {{ total_guests.count }}
+        </div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">With Email</div>
+        <div class="text-3xl font-bold text-gray-900">
+            {% set with_email = namespace(count=0) %}
+            {% for invitation in invitations %}
+                {% if invitation.household.contacts_with_email|length > 0 %}
+                    {% set with_email.count = with_email.count + 1 %}
+                {% endif %}
+            {% endfor %}
+            {{ with_email.count }}
+        </div>
+    </div>
+</div>
+
+<!-- Invited Households List -->
+<div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-xl font-semibold text-gray-900">Invited Households ({{ invitations|length }})</h2>
+    </div>
+
+    {% if invitations %}
+        <ul class="divide-y divide-gray-200">
+            {% for invitation in invitations %}
+                <li class="px-6 py-4 hover:bg-gray-50">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-medium text-gray-900">{{ invitation.household.name }}</h3>
+
+                            <div class="mt-1 text-sm text-gray-600">
+                                <span>👥 {{ invitation.household.active_members|length }} member(s)</span>
+
+                                {% set contacts = invitation.household.contacts_with_email %}
+                                {% if contacts %}
+                                    <span class="ml-3">
+                                        📧 Contacts:
+                                        {% for contact in contacts %}
+                                            {{ contact.email }}{% if not loop.last %}, {% endif %}
+                                        {% endfor %}
+                                    </span>
+                                {% else %}
+                                    <span class="ml-3 text-amber-600">⚠️ No email addresses</span>
+                                {% endif %}
+                            </div>
+
+                            <!-- Member names -->
+                            {% if invitation.household.active_members %}
+                            <div class="mt-2 text-sm text-gray-600">
+                                {% for member in invitation.household.active_members %}
+                                    <span class="inline-block bg-gray-100 rounded px-2 py-0.5 mr-2 mb-1">
+                                        {{ member.full_name }}
+                                        {% if member.role == 'child' %}
+                                            <span class="text-xs text-gray-500">(child)</span>
+                                        {% endif %}
+                                    </span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+
+                            <div class="mt-2 text-xs text-gray-500">
+                                Invited {{ invitation.invited_at|datetime('%b %d, %Y at %I:%M %p') }}
+                                {% if invitation.is_sent %}
+                                    <span class="ml-2 text-green-600">
+                                        ✓ Sent {{ invitation.last_sent_at|datetime('%b %d, %Y at %I:%M %p') }}
+                                        {% if invitation.sent_count > 1 %}
+                                            ({{ invitation.sent_count }}x)
+                                        {% endif %}
+                                    </span>
+                                {% else %}
+                                    <span class="ml-2 text-amber-600">⏳ Pending</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="ml-4 flex flex-col space-y-2">
+                            {% set contacts = invitation.household.contacts_with_email %}
+                            {% if contacts %}
+                                <form method="POST"
+                                      action="{{ url_for('organizer.resend_invitation', event_uuid=event.uuid, invitation_id=invitation.id) }}"
+                                      class="inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit"
+                                            class="text-green-600 hover:text-green-500 text-sm font-medium">
+                                        {% if invitation.is_sent %}
+                                            📧 Resend
+                                        {% else %}
+                                            📧 Send Now
+                                        {% endif %}
+                                    </button>
+                                </form>
+                            {% endif %}
+                            <a href="{{ url_for('guests.view_household', household_id=invitation.household.id) }}"
+                               class="text-indigo-600 hover:text-indigo-500 text-sm font-medium text-right">
+                                View Details
+                            </a>
+                            <form method="POST"
+                                  action="{{ url_for('organizer.remove_invitation', event_uuid=event.uuid, household_id=invitation.household.id) }}"
+                                  onsubmit="return confirm('Remove {{ invitation.household.name }} from this event? This will delete all their RSVPs.');"
+                                  class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit"
+                                        class="text-red-600 hover:text-red-500 text-sm font-medium">
+                                    Remove
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="px-6 py-12 text-center">
+            <p class="text-gray-500 mb-4">No households invited yet.</p>
+            <a href="{{ url_for('organizer.browse_households', event_uuid=event.uuid) }}"
+               class="inline-block text-indigo-600 hover:text-indigo-500 font-medium">
+                Browse & invite households →
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Help Text -->
+<div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
+    <h3 class="text-sm font-medium text-blue-800 mb-2">💡 Next Steps</h3>
+    <ul class="text-sm text-blue-700 list-disc list-inside space-y-1">
+        <li>Add more households by clicking the "Add Households" button above</li>
+        <li>Send invitation emails from the event dashboard</li>
+        <li>Manage RSVPs for each guest from the event dashboard</li>
+        <li>View household details by clicking "View Details"</li>
+    </ul>
+</div>
+{% endblock %}
+

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Guest Management - {{ app_name }}{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('organizer.dashboard') }}" class="text-gray-700 hover:text-gray-900 mr-4">← Back to Dashboard</a>
+<a href="{{ url_for('organizer.logout') }}" class="text-gray-700 hover:text-gray-900">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Guest Management</h1>
+            <p class="text-gray-600">Manage all households and people in the system</p>
+        </div>
+        <a href="{{ url_for('guests.create_household') }}" 
+           class="bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-700">
+            + New Household
+        </a>
+    </div>
+</div>
+
+<!-- Statistics -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Total Households</div>
+        <div class="text-3xl font-bold text-gray-900">{{ households|length }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Total People</div>
+        <div class="text-3xl font-bold text-gray-900">
+            {% set total_people = namespace(count=0) %}
+            {% for household in households %}
+                {% set total_people.count = total_people.count + household.active_members|length %}
+            {% endfor %}
+            {{ total_people.count }}
+        </div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Adults / Children</div>
+        <div class="text-3xl font-bold text-gray-900">
+            {% set adults = namespace(count=0) %}
+            {% set children = namespace(count=0) %}
+            {% for household in households %}
+                {% for member in household.active_members %}
+                    {% if member.role == 'adult' %}
+                        {% set adults.count = adults.count + 1 %}
+                    {% else %}
+                        {% set children.count = children.count + 1 %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+            <span class="text-2xl">{{ adults.count }} / {{ children.count }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Households List -->
+<div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-xl font-semibold text-gray-900">All Households</h2>
+    </div>
+    
+    {% if households %}
+        <ul class="divide-y divide-gray-200">
+            {% for household in households %}
+                <li class="px-6 py-4 hover:bg-gray-50">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <a href="{{ url_for('guests.view_household', household_id=household.id) }}" 
+                               class="text-lg font-medium text-indigo-600 hover:text-indigo-500">
+                                {{ household.name }}
+                            </a>
+                            
+                            {% if household.address %}
+                            <p class="text-sm text-gray-600 mt-1">
+                                📍 {{ household.address|replace('\n', ', ') }}
+                            </p>
+                            {% endif %}
+                            
+                            <div class="mt-2 flex items-center space-x-4 text-sm text-gray-500">
+                                <span>
+                                    👥 {{ household.active_members|length }} member(s)
+                                </span>
+
+                                {% set members_with_email = household.active_members|selectattr('email')|list %}
+                                {% if members_with_email %}
+                                <span>
+                                    📧 Contacts:
+                                    {% for member in members_with_email %}
+                                        {{ member.full_name }}{% if not loop.last %}, {% endif %}
+                                    {% endfor %}
+                                </span>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Member names -->
+                            {% if household.active_members %}
+                            <div class="mt-2 text-sm text-gray-600">
+                                {% for member in household.active_members %}
+                                    <span class="inline-block bg-gray-100 rounded px-2 py-1 mr-2 mb-1">
+                                        {{ member.full_name }}
+                                        {% if member.role == 'child' %}
+                                            <span class="text-xs text-gray-500">(child)</span>
+                                        {% endif %}
+                                    </span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="ml-4 flex space-x-2">
+                            <a href="{{ url_for('guests.view_household', household_id=household.id) }}" 
+                               class="text-indigo-600 hover:text-indigo-500 text-sm font-medium">
+                                View
+                            </a>
+                            <a href="{{ url_for('guests.edit_household', household_id=household.id) }}" 
+                               class="text-gray-600 hover:text-gray-500 text-sm font-medium">
+                                Edit
+                            </a>
+                        </div>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="px-6 py-12 text-center">
+            <p class="text-gray-500 mb-4">No households yet.</p>
+            <a href="{{ url_for('guests.create_household') }}" 
+               class="inline-block text-indigo-600 hover:text-indigo-500">
+                Create your first household →
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Help Text -->
+<div class="mt-8 bg-blue-50 border border-blue-200 rounded-md p-4">
+    <h3 class="text-sm font-medium text-blue-800 mb-2">💡 About Guest Management</h3>
+    <p class="text-sm text-blue-700 mb-2">
+        This is the <strong>system-wide guest directory</strong>. Households and people you create here can be invited to multiple events.
+        When creating an event, you'll select which households to invite from this directory.
+    </p>
+    <p class="text-sm text-blue-700">
+        <strong>Invitations:</strong> When you invite a household to an event, invitations will be sent to all household members with email addresses.
+        Anyone who receives an invitation can RSVP on behalf of the entire household.
+    </p>
+</div>
+{% endblock %}
+

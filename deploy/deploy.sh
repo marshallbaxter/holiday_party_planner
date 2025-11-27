@@ -8,7 +8,7 @@ set -e  # Exit on any error
 # CONFIGURATION - Edit these values for your environment
 # ============================================================================
 
-APP_DIR="/home/holiday-party/app"
+APP_DIR="/opt/holiday-party/app"
 REPO_URL="https://github.com/yourusername/holiday_party_planner.git"
 VENV_DIR="$APP_DIR/venv"
 BACKUP_DIR="$APP_DIR/backups"

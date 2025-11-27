@@ -18,6 +18,7 @@ class EventService:
         rsvp_deadline=None,
         is_recurring=False,
         recurrence_rule=None,
+        status="draft",
     ):
         """Create a new event.
 
@@ -31,6 +32,7 @@ class EventService:
             rsvp_deadline: RSVP deadline (optional)
             is_recurring: Whether event recurs annually (optional)
             recurrence_rule: Recurrence rule as JSON (optional)
+            status: Event status - draft, published, or archived (optional, defaults to draft)
 
         Returns:
             Created Event object
@@ -45,7 +47,7 @@ class EventService:
             is_recurring=is_recurring,
             recurrence_rule=recurrence_rule,
             created_by_person_id=created_by_person_id,
-            status="draft",
+            status=status,
         )
 
         db.session.add(event)

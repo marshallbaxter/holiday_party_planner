@@ -66,7 +66,8 @@ chmod +x deploy/*.sh
 ```bash
 # Copy and edit .env
 cp .env.example .env
-python3 -c "import secrets; print(secrets.token_hex(32))"  # Generate SECRET_KEY
+python3 -c "import secrets; print(secrets.token_hex(32))"  
+# Generate SECRET_KEY
 nano .env
 ```
 

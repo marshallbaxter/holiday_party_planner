@@ -582,34 +582,35 @@ def test_rsvp_form_excludes_no_response_option(app, sample_event, sample_person,
     assert "No Response" not in html_content
 
 
-def test_rsvp_form_shows_missing_email_inline(app, sample_event, sample_household, sample_invitation):
-    """Test that RSVP form shows inline email input for members missing email addresses."""
+def test_rsvp_form_shows_missing_contact_info_inline(app, sample_event, sample_household, sample_invitation):
+    """Test that RSVP form shows inline inputs for members missing contact info."""
     from app import db
     from app.models import HouseholdMembership
     from flask import render_template
 
-    # Create person without email
-    person_no_email = Person(
-        first_name="NoEmail",
+    # Create person without email or phone
+    person_no_contact = Person(
+        first_name="NoContact",
         last_name="Person",
-        email=None,  # No email
+        email=None,
+        phone=None,
         role="adult"
     )
-    db.session.add(person_no_email)
+    db.session.add(person_no_contact)
     db.session.commit()
 
     membership = HouseholdMembership(
-        person=person_no_email,
+        person=person_no_contact,
         household=sample_household,
         role="adult"
     )
     db.session.add(membership)
     db.session.commit()
 
-    # Create RSVP for person without email
+    # Create RSVP for person without contact info
     rsvp = RSVP(
         event_id=sample_event.id,
-        person_id=person_no_email.id,
+        person_id=person_no_contact.id,
         household_id=sample_household.id,
         status="no_response"
     )
@@ -626,20 +627,43 @@ def test_rsvp_form_shows_missing_email_inline(app, sample_event, sample_househol
     )
 
     # Verify the inline email input is displayed
-    assert "Add email to receive confirmations" in html_content
-    assert "NoEmail" in html_content
-    assert f'name="email_{person_no_email.id}"' in html_content  # The inline email field
+    assert "Add email to receive updates" in html_content
+    assert "NoContact" in html_content
+    assert f'name="email_{person_no_contact.id}"' in html_content
+
+    # Verify the inline phone input is displayed
+    assert "Add phone number" in html_content
+    assert f'name="phone_{person_no_contact.id}"' in html_content
 
 
-def test_rsvp_form_no_email_input_when_all_have_email(app, sample_event, sample_person, sample_household, sample_invitation):
-    """Test that no inline email input is shown when all members have email addresses."""
+def test_rsvp_form_no_contact_inputs_when_all_have_info(app, sample_event, sample_household, sample_invitation):
+    """Test that no inline contact inputs are shown when all members have contact info."""
     from app import db
     from flask import render_template
 
-    # sample_person already has email from fixture
+    # Create person with both email and phone
+    person_with_contact = Person(
+        first_name="HasContact",
+        last_name="Person",
+        email="hascontact@example.com",
+        phone="555-123-4567",
+        role="adult"
+    )
+    db.session.add(person_with_contact)
+    db.session.commit()
+
+    from app.models import HouseholdMembership
+    membership = HouseholdMembership(
+        person=person_with_contact,
+        household=sample_household,
+        role="adult"
+    )
+    db.session.add(membership)
+    db.session.commit()
+
     rsvp = RSVP(
         event_id=sample_event.id,
-        person_id=sample_person.id,
+        person_id=person_with_contact.id,
         household_id=sample_household.id,
         status="attending"
     )
@@ -655,6 +679,7 @@ def test_rsvp_form_no_email_input_when_all_have_email(app, sample_event, sample_
         token='test_token',
     )
 
-    # Verify NO inline email input is displayed
-    assert "Add email to receive confirmations" not in html_content
+    # Verify NO inline contact inputs are displayed
+    assert "Add email to receive updates" not in html_content
+    assert "Add phone number" not in html_content
 

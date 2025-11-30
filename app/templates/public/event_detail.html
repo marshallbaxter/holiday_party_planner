@@ -171,7 +171,6 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
                     <p class="text-gray-600">No dietary restrictions reported by attending guests.</p>
-                    <p class="text-sm text-gray-500 mt-2">Guests can add dietary preferences to their profiles.</p>
                 </div>
             {% endif %}
         {% else %}
@@ -189,6 +188,69 @@
                     {% endif %}
                 </p>
             </div>
+        {% endif %}
+
+        <!-- Personal Dietary Preferences Form (shown when guest is authenticated) -->
+        {% if user_rsvp_data and user_rsvp_data.household %}
+        <div class="mt-6 pt-6 border-t border-gray-200">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Your Household's Dietary Info</h3>
+
+            {% for member in user_rsvp_data.household.active_members %}
+            <div class="mb-4 p-4 bg-gray-50 rounded-lg" id="dietary-member-{{ member.id }}">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-medium text-gray-800">{{ member.full_name }}</span>
+                    {% if member.is_child %}
+                    <span class="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Child</span>
+                    {% endif %}
+                </div>
+
+                <!-- Current tags for this person -->
+                <div id="tags-{{ member.id }}" class="flex flex-wrap gap-2 mb-3 min-h-[32px]">
+                    {% if member.tags %}
+                        {% for tag in member.tags %}
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                            {{ tag.name }}
+                            <button type="button"
+                                    class="ml-2 text-green-600 hover:text-green-800 focus:outline-none"
+                                    onclick="removeDietaryTag('{{ tag.name }}', {{ member.id }})">
+                                ×
+                            </button>
+                        </span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="text-sm text-gray-500 no-tags-msg">No dietary restrictions added</span>
+                    {% endif %}
+                </div>
+
+                <!-- Add tag input -->
+                <div class="flex gap-2">
+                    <div class="flex-1 relative">
+                        <input type="text"
+                               id="tag-input-{{ member.id }}"
+                               class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                               placeholder="Add restriction (e.g., vegetarian, nut allergy)"
+                               autocomplete="off"
+                               onkeypress="handleTagKeypress(event, {{ member.id }})">
+                        <div id="tag-suggestions-{{ member.id }}"
+                             class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        </div>
+                    </div>
+                    <button type="button"
+                            class="px-3 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                            onclick="addDietaryTag({{ member.id }})">
+                        Add
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+
+            <p class="text-sm text-gray-500 mt-2">
+                <svg class="inline h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Add allergies, dietary restrictions, or food preferences. This helps the host plan the menu.
+            </p>
+        </div>
         {% endif %}
     </div>
 
@@ -394,5 +456,150 @@
     </div>
     {% endif %}
 </div>
+
+{% if user_rsvp_data and user_rsvp_data.token %}
+<script>
+// Dietary tag management for guests
+const rsvpToken = '{{ user_rsvp_data.token }}';
+let tagSuggestionsTimeouts = {};
+
+// Handle Enter key to add tag
+function handleTagKeypress(event, personId) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        addDietaryTag(personId);
+    }
+}
+
+// Set up input listeners for autocomplete
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('[id^="tag-input-"]').forEach(input => {
+        const personId = input.id.replace('tag-input-', '');
+
+        input.addEventListener('input', function() {
+            const query = this.value.trim();
+
+            if (tagSuggestionsTimeouts[personId]) {
+                clearTimeout(tagSuggestionsTimeouts[personId]);
+            }
+
+            const suggestionsDiv = document.getElementById(`tag-suggestions-${personId}`);
+            if (query.length === 0) {
+                suggestionsDiv.classList.add('hidden');
+                return;
+            }
+
+            tagSuggestionsTimeouts[personId] = setTimeout(() => {
+                fetchTagSuggestions(query, personId);
+            }, 300);
+        });
+    });
+
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', function(e) {
+        document.querySelectorAll('[id^="tag-suggestions-"]').forEach(div => {
+            const personId = div.id.replace('tag-suggestions-', '');
+            const input = document.getElementById(`tag-input-${personId}`);
+            if (!input.contains(e.target) && !div.contains(e.target)) {
+                div.classList.add('hidden');
+            }
+        });
+    });
+});
+
+// Fetch tag suggestions from API
+async function fetchTagSuggestions(query, personId) {
+    try {
+        const response = await fetch(`/api/tags?q=${encodeURIComponent(query)}&limit=10`);
+        const data = await response.json();
+
+        const suggestionsDiv = document.getElementById(`tag-suggestions-${personId}`);
+        if (data.tags && data.tags.length > 0) {
+            suggestionsDiv.innerHTML = '';
+            data.tags.forEach(tag => {
+                const div = document.createElement('div');
+                div.className = 'px-4 py-2 hover:bg-gray-100 cursor-pointer flex justify-between items-center text-sm';
+                div.innerHTML = `
+                    <span>${tag.name}</span>
+                    <span class="text-xs text-gray-500">${tag.usage_count} ${tag.usage_count === 1 ? 'person' : 'people'}</span>
+                `;
+                div.onclick = () => {
+                    document.getElementById(`tag-input-${personId}`).value = tag.name;
+                    suggestionsDiv.classList.add('hidden');
+                    addDietaryTag(personId);
+                };
+                suggestionsDiv.appendChild(div);
+            });
+            suggestionsDiv.classList.remove('hidden');
+        } else {
+            suggestionsDiv.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error fetching tag suggestions:', error);
+    }
+}
+
+// Add dietary tag to person
+async function addDietaryTag(personId) {
+    const input = document.getElementById(`tag-input-${personId}`);
+    const tagName = input.value.trim();
+
+    if (!tagName) return;
+
+    try {
+        const response = await fetch(`/api/person/${personId}/tags?token=${encodeURIComponent(rsvpToken)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({
+                tag_name: tagName,
+                category: 'dietary'
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            input.value = '';
+            document.getElementById(`tag-suggestions-${personId}`).classList.add('hidden');
+            // Reload page to show updated tags and aggregated counts
+            location.reload();
+        } else {
+            alert(data.error || 'Failed to add dietary restriction');
+        }
+    } catch (error) {
+        console.error('Error adding tag:', error);
+        alert('Failed to add dietary restriction. Please try again.');
+    }
+}
+
+// Remove dietary tag from person
+async function removeDietaryTag(tagName, personId) {
+    if (!confirm(`Remove "${tagName}"?`)) return;
+
+    try {
+        const response = await fetch(`/api/person/${personId}/tags/${encodeURIComponent(tagName)}?token=${encodeURIComponent(rsvpToken)}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token() }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert(data.error || 'Failed to remove dietary restriction');
+        }
+    } catch (error) {
+        console.error('Error removing tag:', error);
+        alert('Failed to remove dietary restriction. Please try again.');
+    }
+}
+</script>
+{% endif %}
 {% endblock %}
 

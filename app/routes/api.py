@@ -233,24 +233,39 @@ def add_person_tag(person_id):
             "category": "dietary"  # optional, defaults to "dietary"
         }
 
+    Query params (for token-based auth):
+        - token: RSVP invitation token
+
     Returns:
         JSON with success message and updated tags
     """
-    # Check authentication
-    current_person_id = session.get("person_id")
-    if not current_person_id:
-        return jsonify({"error": "Authentication required"}), 401
-
     person = Person.query.get_or_404(person_id)
-
-    # Check if current user has permission to edit this person's tags
-    # Users can edit tags for people in their household
-    current_person = Person.query.get(current_person_id)
     person_household_ids = [h.id for h in person.active_households]
-    current_household_ids = [h.id for h in current_person.active_households]
+    has_permission = False
+    current_person_id = None
 
-    # Check if they share a household
-    has_permission = bool(set(person_household_ids) & set(current_household_ids))
+    # Method 1: Check session-based authentication (logged-in user)
+    current_person_id = session.get("person_id")
+    if current_person_id:
+        current_person = Person.query.get(current_person_id)
+        if current_person:
+            current_household_ids = [h.id for h in current_person.active_households]
+            # Check if they share a household
+            has_permission = bool(set(person_household_ids) & set(current_household_ids))
+
+    # Method 2: Check token-based authentication (guest via invitation link)
+    if not has_permission:
+        token = request.args.get("token")
+        if token:
+            from app.models import EventInvitation
+            token_data = EventInvitation.verify_token(token)
+            if token_data:
+                # Check if person belongs to the household in the token
+                household_id = token_data.get("household_id")
+                if household_id in person_household_ids:
+                    has_permission = True
+                    # Use person being edited as the "added_by" since we don't have a specific person from token
+                    current_person_id = person_id
 
     if not has_permission:
         return jsonify({"error": "Permission denied. You can only edit tags for people in your household."}), 403
@@ -290,23 +305,36 @@ def add_person_tag(person_id):
 def remove_person_tag(person_id, tag_name):
     """Remove a tag from a person.
 
+    Query params (for token-based auth):
+        - token: RSVP invitation token
+
     Returns:
         JSON with success message and updated tags
     """
-    # Check authentication
-    current_person_id = session.get("person_id")
-    if not current_person_id:
-        return jsonify({"error": "Authentication required"}), 401
-
     person = Person.query.get_or_404(person_id)
-
-    # Check if current user has permission to edit this person's tags
-    current_person = Person.query.get(current_person_id)
     person_household_ids = [h.id for h in person.active_households]
-    current_household_ids = [h.id for h in current_person.active_households]
+    has_permission = False
 
-    # Check if they share a household
-    has_permission = bool(set(person_household_ids) & set(current_household_ids))
+    # Method 1: Check session-based authentication (logged-in user)
+    current_person_id = session.get("person_id")
+    if current_person_id:
+        current_person = Person.query.get(current_person_id)
+        if current_person:
+            current_household_ids = [h.id for h in current_person.active_households]
+            # Check if they share a household
+            has_permission = bool(set(person_household_ids) & set(current_household_ids))
+
+    # Method 2: Check token-based authentication (guest via invitation link)
+    if not has_permission:
+        token = request.args.get("token")
+        if token:
+            from app.models import EventInvitation
+            token_data = EventInvitation.verify_token(token)
+            if token_data:
+                # Check if person belongs to the household in the token
+                household_id = token_data.get("household_id")
+                if household_id in person_household_ids:
+                    has_permission = True
 
     if not has_permission:
         return jsonify({"error": "Permission denied. You can only edit tags for people in your household."}), 403

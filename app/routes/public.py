@@ -289,28 +289,35 @@ def submit_rsvp(event_uuid):
                 notes_key = f"notes_{person_id}"
                 notes = request.form.get(notes_key, "").strip() or None
 
-                # Get optional email for this person (if they're missing one)
+                # Get optional contact info for this person (if they're missing it)
                 email_key = f"email_{person_id}"
                 email = request.form.get(email_key, "").strip() or None
+
+                phone_key = f"phone_{person_id}"
+                phone = request.form.get(phone_key, "").strip() or None
 
                 # Add to rsvp_data dictionary
                 rsvp_data[person_id] = {
                     "status": status,
                     "notes": notes,
-                    "email": email
+                    "email": email,
+                    "phone": phone
                 }
 
-        # Update email addresses for household members who are missing them
+        # Update contact info for household members who are missing it
         # This must be committed BEFORE processing RSVPs so confirmation emails can be sent
-        emails_updated = False
+        contact_updated = False
         for person_id, data in rsvp_data.items():
-            if data.get("email"):
-                person = Person.query.get(person_id)
-                if person and not person.email:
+            person = Person.query.get(person_id)
+            if person:
+                if data.get("email") and not person.email:
                     person.email = data["email"]
-                    emails_updated = True
+                    contact_updated = True
+                if data.get("phone") and not person.phone:
+                    person.phone = data["phone"]
+                    contact_updated = True
 
-        if emails_updated:
+        if contact_updated:
             db.session.commit()
 
         # Check if we have any RSVP data to process
@@ -449,12 +456,13 @@ def add_potluck_item(event_uuid):
             ).first()
             if invitation and invitation.household:
                 # Get a person from the household to associate the item
+                # Note: active_members returns Person objects, not HouseholdMembership objects
                 # Prefer adults with email
-                person = next((m.person for m in invitation.household.active_members
-                              if m.person.email and not m.is_child), None)
+                person = next((m for m in invitation.household.active_members
+                              if m.email and not m.is_child), None)
                 if not person:
                     # Fall back to any active member
-                    person = next((m.person for m in invitation.household.active_members), None)
+                    person = next((m for m in invitation.household.active_members), None)
 
     if not person:
         flash("Please log in or use your invitation link to add items", "warning")

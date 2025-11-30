@@ -73,6 +73,7 @@ class RSVPService:
             List of updated RSVP objects
         """
         updated_rsvps = []
+        status_changed_rsvps = []
 
         for person_id, data in rsvp_data.items():
             rsvp = RSVP.query.filter_by(
@@ -80,17 +81,26 @@ class RSVPService:
             ).first()
 
             if rsvp:
-                status = data.get("status", "no_response")
+                new_status = data.get("status", "no_response")
                 notes = data.get("notes")
-                rsvp.update_status(status, notes)
+
+                # Track if status actually changed (not just notes)
+                old_status = rsvp.status
+                status_changed = old_status != new_status
+
+                rsvp.update_status(new_status, notes)
                 updated_rsvps.append(rsvp)
+
+                # Only track RSVPs where status changed for email notifications
+                if status_changed:
+                    status_changed_rsvps.append(rsvp)
 
         db.session.commit()
 
-        # Send confirmation email to household
-        if updated_rsvps:
-            NotificationService.send_household_rsvp_confirmation(
-                event, household, updated_rsvps
+        # Send individual confirmation emails only to people whose status changed
+        if status_changed_rsvps:
+            NotificationService.send_individual_rsvp_confirmations(
+                event, status_changed_rsvps
             )
 
         return updated_rsvps

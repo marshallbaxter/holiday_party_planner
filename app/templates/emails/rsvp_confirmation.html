@@ -37,13 +37,28 @@
         
         {% if rsvp.status == 'attending' %}
         <p>We're looking forward to seeing you there!</p>
+        {% elif rsvp.status == 'maybe' %}
+        <p>Thanks for letting us know you might be able to make it! We hope to see you there.</p>
         {% else %}
         <p>We're sorry you can't make it. Hope to see you at the next event!</p>
         {% endif %}
-        
+
+        {% if invitation %}
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{{ invitation.get_event_url() }}"
+               style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                View Event Details
+            </a>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
+            Need to change your RSVP? Click the button above to view the event and update your response.
+        </p>
+        {% else %}
         <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
             Need to change your RSVP? Use the link from your original invitation email.
         </p>
+        {% endif %}
         
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
         

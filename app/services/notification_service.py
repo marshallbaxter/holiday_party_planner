@@ -151,8 +151,15 @@ class NotificationService:
         if not person.email:
             return False
 
+        # Get invitation for RSVP link
+        invitation = EventInvitation.query.filter_by(
+            event_id=event.id, household_id=rsvp.household_id
+        ).first()
+
         subject = f"RSVP Confirmed for {event.title}"
-        html_content = render_template("emails/rsvp_confirmation.html", rsvp=rsvp, event=event)
+        html_content = render_template(
+            "emails/rsvp_confirmation.html", rsvp=rsvp, event=event, invitation=invitation
+        )
 
         return NotificationService.send_email(
             to_email=person.email,
@@ -164,8 +171,41 @@ class NotificationService:
         )
 
     @staticmethod
+    def send_individual_rsvp_confirmations(event, rsvps):
+        """Send individual RSVP confirmation emails to people whose status changed.
+
+        Each person receives their own personalized email with their individual
+        RSVP status. Only sends to people who have an email address.
+
+        Args:
+            event: Event object
+            rsvps: List of RSVP objects for people whose status changed
+
+        Returns:
+            Dictionary with success and failure counts
+        """
+        success_count = 0
+        failure_count = 0
+
+        for rsvp in rsvps:
+            person = rsvp.person
+            if not person.email:
+                # Skip people without email addresses
+                continue
+
+            if NotificationService.send_rsvp_confirmation(rsvp):
+                success_count += 1
+            else:
+                failure_count += 1
+
+        return {"success": success_count, "failure": failure_count}
+
+    @staticmethod
     def send_household_rsvp_confirmation(event, household, rsvps):
         """Send RSVP confirmation email to all household members with email.
+
+        DEPRECATED: Use send_individual_rsvp_confirmations() instead for
+        individual personalized emails.
 
         Args:
             event: Event object

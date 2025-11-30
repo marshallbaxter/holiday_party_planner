@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Send Invitations - {{ event.title }} - {{ app_name }}{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('organizer.event_dashboard', event_uuid=event.uuid) }}" class="text-gray-700 hover:text-gray-900 mr-4">← Back to Event</a>
+<a href="{{ url_for('organizer.logout') }}" class="text-gray-700 hover:text-gray-900">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Send Invitations</h1>
+            <p class="text-gray-600">{{ event.title }}</p>
+        </div>
+        <a href="{{ url_for('organizer.manage_guests', event_uuid=event.uuid) }}"
+           class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md font-semibold hover:bg-gray-300">
+            Manage Guest List
+        </a>
+    </div>
+</div>
+
+<!-- Statistics -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Total Invited</div>
+        <div class="text-3xl font-bold text-gray-900">{{ invitation_stats.total }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Pending</div>
+        <div class="text-3xl font-bold text-amber-600">{{ invitation_stats.pending }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Sent</div>
+        <div class="text-3xl font-bold text-green-600">{{ invitation_stats.sent }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">No Email</div>
+        <div class="text-3xl font-bold text-red-600">{{ invitation_stats.no_email }}</div>
+    </div>
+</div>
+
+<!-- Bulk Actions -->
+{% if invitation_stats.pending > 0 %}
+<div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h3 class="text-sm font-medium text-indigo-800">📧 Send All Pending Invitations</h3>
+            <p class="text-sm text-indigo-700 mt-1">Send invitations to {{ invitation_stats.pending }} household(s) that haven't received one yet.</p>
+        </div>
+        <form method="POST" action="{{ url_for('organizer.send_invitations', event_uuid=event.uuid) }}"
+              onsubmit="return confirm('Send invitations to {{ invitation_stats.pending }} household(s)?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <input type="hidden" name="send_type" value="pending"/>
+            <input type="hidden" name="redirect_to" value="manage_invitations"/>
+            <button type="submit"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-700">
+                Send All Pending
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Invitations List -->
+<div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-xl font-semibold text-gray-900">Invited Households ({{ invitations|length }})</h2>
+        <p class="text-sm text-gray-600 mt-1">Send or resend invitations to individual people or entire households</p>
+    </div>
+
+    {% if invitations %}
+        <ul class="divide-y divide-gray-200">
+            {% for invitation in invitations %}
+                <li class="px-6 py-4">
+                    <!-- Household Header -->
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center">
+                            <h3 class="text-lg font-medium text-gray-900">{{ invitation.household.name }}</h3>
+                            {% if invitation.is_sent %}
+                                <span class="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    ✓ Sent
+                                    {% if invitation.sent_count > 1 %}({{ invitation.sent_count }}x){% endif %}
+                                </span>
+                            {% else %}
+                                <span class="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                    ⏳ Pending
+                                </span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Send to All in Household -->
+                        <div>
+                            {% set contacts = invitation.household.contacts_with_email %}
+                            {% if contacts %}
+                                <form method="POST"
+                                      action="{{ url_for('organizer.send_single_invitation', event_uuid=event.uuid, invitation_id=invitation.id) }}"
+                                      class="inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    {% if invitation.is_sent %}
+                                        <button type="submit"
+                                                class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md shadow-sm text-xs font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                            📧 Resend to All ({{ contacts|length }})
+                                        </button>
+                                    {% else %}
+                                        <button type="submit"
+                                                class="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                                            📧 Send to All ({{ contacts|length }})
+                                        </button>
+                                    {% endif %}
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if invitation.is_sent %}
+                    <div class="text-xs text-gray-500 mb-3">
+                        Last household-wide send: {{ invitation.last_sent_at|datetime('%b %d, %Y at %I:%M %p') }}
+                    </div>
+                    {% endif %}
+
+                    <!-- Individual Members -->
+                    <div class="ml-4 space-y-2">
+                        {% for member in invitation.household.active_members %}
+                            <div class="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-md">
+                                <div class="flex items-center space-x-3">
+                                    <span class="text-gray-900 font-medium">{{ member.full_name }}</span>
+                                    {% if member.role == 'child' %}
+                                        <span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Child</span>
+                                    {% endif %}
+                                    {% if member.email %}
+                                        <span class="text-sm text-gray-500">{{ member.email }}</span>
+                                    {% else %}
+                                        <span class="text-xs text-red-500">No email</span>
+                                    {% endif %}
+                                </div>
+
+                                <div>
+                                    {% if member.email %}
+                                        <form method="POST"
+                                              action="{{ url_for('organizer.send_invitation_to_person', event_uuid=event.uuid, invitation_id=invitation.id, person_id=member.id) }}"
+                                              class="inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit"
+                                                    class="inline-flex items-center px-3 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                                📧 Send
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        <span class="text-xs text-gray-400 italic">Cannot send</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="px-6 py-12 text-center">
+            <p class="text-gray-500 mb-4">No households invited yet.</p>
+            <a href="{{ url_for('organizer.manage_guests', event_uuid=event.uuid) }}"
+               class="inline-block text-indigo-600 hover:text-indigo-500 font-medium">
+                Add guests first →
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Help Text -->
+<div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
+    <h3 class="text-sm font-medium text-blue-800 mb-2">💡 Tips</h3>
+    <ul class="text-sm text-blue-700 list-disc list-inside space-y-1">
+        <li><strong>Send to All</strong> - Send the invitation email to everyone in the household with an email address</li>
+        <li><strong>Send (per person)</strong> - Send the invitation to just one specific person</li>
+        <li>Members without email addresses cannot receive invitations</li>
+        <li>The household send count tracks bulk sends (not individual sends)</li>
+        <li>Great for testing: send to yourself first before sending to everyone</li>
+    </ul>
+</div>
+{% endblock %}
+

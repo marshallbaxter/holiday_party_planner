@@ -6,6 +6,7 @@ from app.utils.decorators import login_required, event_admin_required
 from app.forms.event_forms import EventForm
 from app.services.event_service import EventService
 from app.services.invitation_service import InvitationService
+from app.services.notification_service import NotificationService
 from app.services.rsvp_service import RSVPService
 
 bp = Blueprint("organizer", __name__, url_prefix="/organizer")
@@ -319,6 +320,25 @@ def remove_invitation(event_uuid, household_id):
     return redirect(url_for("organizer.manage_guests", event_uuid=event_uuid))
 
 
+@bp.route("/event/<uuid:event_uuid>/invitations")
+@login_required
+@event_admin_required
+def manage_invitations(event_uuid):
+    """Manage and send invitations to households."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    invitations = event.invitations.all()
+
+    # Get invitation statistics
+    invitation_stats = InvitationService.get_invitation_stats(event)
+
+    return render_template(
+        "organizer/manage_invitations.html",
+        event=event,
+        invitations=invitations,
+        invitation_stats=invitation_stats,
+    )
+
+
 @bp.route("/event/<uuid:event_uuid>/invitations/send", methods=["POST"])
 @login_required
 @event_admin_required
@@ -339,7 +359,7 @@ def send_invitations(event_uuid):
     # Check if there are any pending invitations to send (only for "pending" mode)
     if send_type == "pending" and stats["pending"] == 0:
         flash("All invitations have already been sent!", "info")
-        return redirect(url_for("organizer.event_dashboard", event_uuid=event_uuid))
+        return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
 
     try:
         if send_type == "all":
@@ -369,14 +389,49 @@ def send_invitations(event_uuid):
     except Exception as e:
         flash(f"Error sending invitations: {str(e)}", "error")
 
+    # Determine where to redirect based on form parameter
+    redirect_to = request.form.get("redirect_to", "event_dashboard")
+    if redirect_to == "manage_invitations":
+        return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
     return redirect(url_for("organizer.event_dashboard", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/invitations/<int:invitation_id>/send", methods=["POST"])
+@login_required
+@event_admin_required
+def send_single_invitation(event_uuid, invitation_id):
+    """Send or resend invitation to a specific household."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+
+    # Get the invitation
+    invitation = EventInvitation.query.filter_by(
+        id=invitation_id,
+        event_id=event.id
+    ).first_or_404()
+
+    try:
+        if InvitationService.send_invitation(invitation):
+            if invitation.sent_count > 1:
+                flash(f"Invitation resent to {invitation.household.name}!", "success")
+            else:
+                flash(f"Invitation sent to {invitation.household.name}!", "success")
+        else:
+            flash(
+                f"Could not send invitation to {invitation.household.name}. "
+                "The household may not have any email addresses.",
+                "warning"
+            )
+    except Exception as e:
+        flash(f"Error sending invitation: {str(e)}", "error")
+
+    return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
 
 
 @bp.route("/event/<uuid:event_uuid>/invitations/<int:invitation_id>/resend", methods=["POST"])
 @login_required
 @event_admin_required
 def resend_invitation(event_uuid, invitation_id):
-    """Resend invitation to a specific household."""
+    """Resend invitation to a specific household (from manage_guests page)."""
     event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
 
     # Get the invitation
@@ -398,6 +453,88 @@ def resend_invitation(event_uuid, invitation_id):
         flash(f"Error resending invitation: {str(e)}", "error")
 
     return redirect(url_for("organizer.manage_guests", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/invitations/<int:invitation_id>/send-to-person/<int:person_id>", methods=["POST"])
+@login_required
+@event_admin_required
+def send_invitation_to_person(event_uuid, invitation_id, person_id):
+    """Send invitation email to a specific person within a household."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+
+    # Get the invitation
+    invitation = EventInvitation.query.filter_by(
+        id=invitation_id,
+        event_id=event.id
+    ).first_or_404()
+
+    # Get the person
+    person = Person.query.get_or_404(person_id)
+
+    # Verify person belongs to the household
+    if person not in invitation.household.active_members:
+        flash(f"{person.full_name} is not a member of {invitation.household.name}.", "error")
+        return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
+
+    try:
+        if InvitationService.send_invitation_to_person(invitation, person):
+            flash(f"Invitation sent to {person.full_name}!", "success")
+        else:
+            if not person.email:
+                flash(
+                    f"Could not send invitation to {person.full_name}. "
+                    "They don't have an email address.",
+                    "warning"
+                )
+            else:
+                flash(
+                    f"Could not send invitation to {person.full_name}. "
+                    "Please try again.",
+                    "warning"
+                )
+    except Exception as e:
+        flash(f"Error sending invitation: {str(e)}", "error")
+
+    return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/rsvp/<int:rsvp_id>/resend-confirmation", methods=["POST"])
+@login_required
+@event_admin_required
+def resend_rsvp_confirmation(event_uuid, rsvp_id):
+    """Resend RSVP confirmation email to a specific person."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+
+    # Get the RSVP
+    rsvp = RSVP.query.filter_by(
+        id=rsvp_id,
+        event_id=event.id
+    ).first_or_404()
+
+    person = rsvp.person
+
+    # Check if person has email
+    if not person.email:
+        flash(
+            f"Cannot send confirmation to {person.full_name}. "
+            "They don't have an email address.",
+            "warning"
+        )
+        return redirect(url_for("organizer.event_dashboard", event_uuid=event_uuid))
+
+    try:
+        if NotificationService.send_rsvp_confirmation(rsvp):
+            flash(f"RSVP confirmation email sent to {person.full_name}!", "success")
+        else:
+            flash(
+                f"Could not send confirmation to {person.full_name}. "
+                "Please try again.",
+                "warning"
+            )
+    except Exception as e:
+        flash(f"Error sending confirmation: {str(e)}", "error")
+
+    return redirect(url_for("organizer.event_dashboard", event_uuid=event_uuid))
 
 
 @bp.route("/login", methods=["GET", "POST"])

@@ -164,12 +164,24 @@ def event_detail(event_uuid):
 
     # Prepare user RSVP data if authenticated and invited
     if household and invitation:
+        # Check for missing contact info in household members
+        members_missing_email = []
+        members_missing_phone = []
+        for rsvp in rsvps:
+            person = rsvp.person
+            if not person.email:
+                members_missing_email.append(person)
+            if not person.phone:
+                members_missing_phone.append(person)
+
         user_rsvp_data = {
             'household': household,
             'invitation': invitation,
             'rsvps': rsvps,
             'summary': rsvp_summary,
-            'token': rsvp_token
+            'token': rsvp_token,
+            'members_missing_email': members_missing_email,
+            'members_missing_phone': members_missing_phone,
         }
 
     # Get current person ID for template
@@ -212,8 +224,15 @@ def rsvp_form(event_uuid):
 
     db.session.commit()
 
+    # Get the token from the request for the form action URLs
+    token = request.args.get("token")
+
     return render_template(
-        "public/rsvp_form.html", event=event, household=household, rsvps=rsvps
+        "public/rsvp_form.html",
+        event=event,
+        household=household,
+        rsvps=rsvps,
+        token=token,
     )
 
 
@@ -270,11 +289,29 @@ def submit_rsvp(event_uuid):
                 notes_key = f"notes_{person_id}"
                 notes = request.form.get(notes_key, "").strip() or None
 
+                # Get optional email for this person (if they're missing one)
+                email_key = f"email_{person_id}"
+                email = request.form.get(email_key, "").strip() or None
+
                 # Add to rsvp_data dictionary
                 rsvp_data[person_id] = {
                     "status": status,
-                    "notes": notes
+                    "notes": notes,
+                    "email": email
                 }
+
+        # Update email addresses for household members who are missing them
+        # This must be committed BEFORE processing RSVPs so confirmation emails can be sent
+        emails_updated = False
+        for person_id, data in rsvp_data.items():
+            if data.get("email"):
+                person = Person.query.get(person_id)
+                if person and not person.email:
+                    person.email = data["email"]
+                    emails_updated = True
+
+        if emails_updated:
+            db.session.commit()
 
         # Check if we have any RSVP data to process
         if not rsvp_data:
@@ -292,15 +329,92 @@ def submit_rsvp(event_uuid):
 
         # Success message
         if updated_rsvps:
-            flash(f"Thank you! Your RSVP has been recorded for {len(updated_rsvps)} person(s). A confirmation email has been sent.", "success")
+            flash(f"Thank you! Your RSVP has been recorded for {len(updated_rsvps)} person(s).", "success")
         else:
             flash("No RSVPs were updated. Please try again.", "warning")
+
+        # Redirect to event detail page on success
+        return redirect(
+            url_for(
+                "public.event_detail",
+                event_uuid=event_uuid,
+                token=request.args.get("token"),
+            )
+        )
 
     except Exception as e:
         # Log the error and show user-friendly message
         db.session.rollback()
         flash(f"An error occurred while submitting your RSVP. Please try again or contact the organizer.", "error")
         # In production, you'd want to log this error: app.logger.error(f"RSVP submission error: {e}")
+
+        # Redirect back to RSVP form on error so user can try again
+        return redirect(
+            url_for(
+                "public.rsvp_form",
+                event_uuid=event_uuid,
+                token=request.args.get("token"),
+            )
+        )
+
+
+@bp.route("/event/<uuid:event_uuid>/update-contact", methods=["POST"])
+@valid_rsvp_token_required
+def update_contact_info(event_uuid):
+    """Update contact information for a household member."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    household = request.household  # Set by decorator
+
+    try:
+        person_id = request.form.get("person_id")
+        email = request.form.get("email", "").strip() or None
+        phone = request.form.get("phone", "").strip() or None
+
+        if not person_id:
+            flash("Invalid request: missing person ID.", "error")
+            return redirect(
+                url_for(
+                    "public.rsvp_form",
+                    event_uuid=event_uuid,
+                    token=request.args.get("token"),
+                )
+            )
+
+        # Validate person belongs to household
+        person_id = int(person_id)
+        valid_person_ids = {member.id for member in household.active_members}
+        if person_id not in valid_person_ids:
+            flash("You can only update contact info for members of your household.", "error")
+            return redirect(
+                url_for(
+                    "public.rsvp_form",
+                    event_uuid=event_uuid,
+                    token=request.args.get("token"),
+                )
+            )
+
+        # Get the person and update their contact info
+        person = Person.query.get(person_id)
+        if person:
+            updated_fields = []
+            if email and not person.email:
+                person.email = email
+                updated_fields.append("email")
+            if phone and not person.phone:
+                person.phone = phone
+                updated_fields.append("phone")
+
+            if updated_fields:
+                db.session.commit()
+                flash(f"Contact information updated for {person.first_name}.", "success")
+            else:
+                flash("No changes were made.", "info")
+
+    except ValueError:
+        flash("Invalid person ID.", "error")
+    except Exception as e:
+        db.session.rollback()
+        flash("An error occurred while updating contact information.", "error")
 
     return redirect(
         url_for(

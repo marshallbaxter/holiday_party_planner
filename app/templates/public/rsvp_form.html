@@ -45,10 +45,9 @@
 
     <!-- RSVP Form -->
     <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-2xl font-semibold text-gray-900 mb-4">{{ household.name }}</h2>
         <p class="text-gray-600 mb-6">Please let us know who from your household will be attending.</p>
-        
-        <form method="POST" action="{{ url_for('public.submit_rsvp', event_uuid=event.uuid, token=request.args.get('token')) }}">
+
+        <form method="POST" action="{{ url_for('public.submit_rsvp', event_uuid=event.uuid, token=token) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
             <div class="space-y-6">
@@ -66,14 +65,35 @@
                         {% endif %}
                     </div>
                     
+                    <!-- Missing Email Warning (inline) -->
+                    {% if not rsvp.person.email %}
+                    <div class="bg-amber-50 border border-amber-200 rounded-md p-3 mb-3">
+                        <div class="flex items-start gap-2">
+                            <svg class="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                            <div class="flex-1">
+                                <label for="email_{{ rsvp.person_id }}" class="block text-sm font-medium text-amber-800 mb-1">
+                                    📧 Add email to receive updates:
+                                </label>
+                                <input type="email"
+                                       id="email_{{ rsvp.person_id }}"
+                                       name="email_{{ rsvp.person_id }}"
+                                       placeholder="Enter email address"
+                                       class="w-full px-3 py-1.5 text-sm border border-amber-300 rounded-md focus:ring-amber-500 focus:border-amber-500 bg-white">
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <div class="space-y-2">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Response:</label>
-                        
+
                         <div class="space-y-2">
                             <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                                <input type="radio" 
-                                       name="rsvp_{{ rsvp.person_id }}" 
-                                       value="attending" 
+                                <input type="radio"
+                                       name="rsvp_{{ rsvp.person_id }}"
+                                       value="attending"
                                        class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
                                        {% if rsvp.status == 'attending' %}checked{% endif %}>
                                 <span class="ml-3 text-gray-900">✓ Attending</span>
@@ -89,21 +109,12 @@
                             </label>
                             
                             <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                                <input type="radio" 
-                                       name="rsvp_{{ rsvp.person_id }}" 
-                                       value="maybe" 
+                                <input type="radio"
+                                       name="rsvp_{{ rsvp.person_id }}"
+                                       value="maybe"
                                        class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
                                        {% if rsvp.status == 'maybe' %}checked{% endif %}>
                                 <span class="ml-3 text-gray-900">? Maybe</span>
-                            </label>
-                            
-                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                                <input type="radio" 
-                                       name="rsvp_{{ rsvp.person_id }}" 
-                                       value="no_response" 
-                                       class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
-                                       {% if rsvp.status == 'no_response' %}checked{% endif %}>
-                                <span class="ml-3 text-gray-900">No Response</span>
                             </label>
                         </div>
                         
@@ -125,17 +136,7 @@
             </div>
             
             <!-- Submit Button -->
-            <div class="mt-8 flex items-center justify-between">
-                <div class="flex flex-col space-y-2">
-                    <a href="{{ url_for('public.guest_dashboard', token=request.args.get('token')) }}"
-                       class="text-indigo-600 hover:text-indigo-500 font-medium">
-                        ← My Invitations
-                    </a>
-                    <a href="{{ url_for('public.event_detail', event_uuid=event.uuid) }}"
-                       class="text-gray-600 hover:text-gray-500 text-sm">
-                        View Event Details
-                    </a>
-                </div>
+            <div class="mt-8 flex justify-end">
                 <button type="submit"
                         class="px-6 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
                     Submit RSVP

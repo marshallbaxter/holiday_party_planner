@@ -40,14 +40,14 @@
         <p>We're looking forward to the event!</p>
 
         <div style="text-align: center; margin: 30px 0;">
-            <a href="{{ url_for('public.guest_dashboard', token=invitation.invitation_token, _external=True) }}"
+            <a href="{{ url_for('public.event_detail', event_uuid=event.uuid, token=invitation.invitation_token, _external=True) }}"
                style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
-                View My Invitations
+                View Event Details
             </a>
         </div>
 
         <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
-            Need to change your RSVP? Click the button above to access your dashboard and manage all your event invitations.
+            Need to change your RSVP? Click the button above to view the event details and manage your response.
         </p>
         
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">

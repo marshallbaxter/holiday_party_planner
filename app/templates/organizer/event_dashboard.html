@@ -63,14 +63,14 @@
         <p class="text-gray-600 text-sm">Add, edit, or remove guests and households</p>
     </a>
 
-    <div class="bg-white rounded-lg shadow p-6">
+    <a href="{{ url_for('organizer.manage_invitations', event_uuid=event.uuid) }}"
+       class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition block">
         <h3 class="text-lg font-semibold text-gray-900 mb-2">📧 Send Invitations</h3>
         {% if invitation_stats.total == 0 %}
             <p class="text-gray-600 text-sm mb-3">No households invited yet</p>
-            <a href="{{ url_for('organizer.manage_guests', event_uuid=event.uuid) }}"
-               class="inline-block text-indigo-600 hover:text-indigo-500 text-sm font-medium">
+            <span class="inline-block text-indigo-600 text-sm font-medium">
                 Add guests first →
-            </a>
+            </span>
         {% else %}
             <p class="text-gray-600 text-sm mb-3">
                 {% if invitation_stats.pending > 0 %}
@@ -80,34 +80,16 @@
                     All {{ invitation_stats.sent }} invitations sent!
                 {% endif %}
             </p>
-            {% if invitation_stats.pending > 0 %}
-                <form method="POST" action="{{ url_for('organizer.send_invitations', event_uuid=event.uuid) }}"
-                      onsubmit="return confirm('Send invitations to {{ invitation_stats.pending }} household(s)?');">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                    <input type="hidden" name="send_type" value="pending"/>
-                    <button type="submit"
-                            class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-indigo-700">
-                        Send to {{ invitation_stats.pending }} Household(s)
-                    </button>
-                </form>
-            {% else %}
-                <form method="POST" action="{{ url_for('organizer.send_invitations', event_uuid=event.uuid) }}"
-                      onsubmit="return confirm('Resend invitations to all {{ invitation_stats.total }} household(s)?');">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                    <input type="hidden" name="send_type" value="all"/>
-                    <button type="submit"
-                            class="w-full bg-gray-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-gray-700">
-                        Resend All
-                    </button>
-                </form>
-            {% endif %}
+            <span class="inline-block text-indigo-600 text-sm font-medium">
+                Manage invitations →
+            </span>
             {% if invitation_stats.no_email > 0 %}
                 <p class="text-amber-600 text-xs mt-2">
                     ⚠️ {{ invitation_stats.no_email }} household(s) have no email
                 </p>
             {% endif %}
         {% endif %}
-    </div>
+    </a>
 
     <a href="#" class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition">
         <h3 class="text-lg font-semibold text-gray-900 mb-2">🍽️ Manage Potluck</h3>
@@ -176,6 +158,9 @@
                                     {% if member.role == 'child' %}
                                         <span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Child</span>
                                     {% endif %}
+                                    {% if member.email %}
+                                        <span class="text-xs text-gray-500">{{ member.email }}</span>
+                                    {% endif %}
                                 </div>
                                 <div class="flex items-center space-x-2">
                                     <select
@@ -194,6 +179,18 @@
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                                             </svg>
                                         </span>
+                                    {% endif %}
+                                    {% if member.email %}
+                                        <form method="POST"
+                                              action="{{ url_for('organizer.resend_rsvp_confirmation', event_uuid=event.uuid, rsvp_id=member_rsvp.id) }}"
+                                              class="inline ml-2">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit"
+                                                    class="text-xs text-indigo-600 hover:text-indigo-500 font-medium"
+                                                    title="Resend RSVP confirmation email">
+                                                📧 Resend Confirmation
+                                            </button>
+                                        </form>
                                     {% endif %}
                                 </div>
                             </div>

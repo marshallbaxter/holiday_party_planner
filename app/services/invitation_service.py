@@ -123,6 +123,34 @@ class InvitationService:
         return InvitationService.send_invitation(invitation)
 
     @staticmethod
+    def send_invitation_to_person(invitation, person):
+        """Send invitation email to a specific person in a household.
+
+        Args:
+            invitation: EventInvitation object
+            person: Person object to send invitation to
+
+        Returns:
+            Boolean indicating if email was sent successfully
+        """
+        if not person or not person.email:
+            return False
+
+        # Verify person belongs to the invitation's household
+        household = invitation.household
+        if person not in household.active_members:
+            return False
+
+        # Send invitation email to this specific person
+        if NotificationService.send_invitation_email(invitation, person):
+            # Mark invitation as sent (tracks household-level send status)
+            invitation.mark_as_sent()
+            db.session.commit()
+            return True
+
+        return False
+
+    @staticmethod
     def get_invitation_by_token(token):
         """Get invitation by token.
 

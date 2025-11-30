@@ -1,7 +1,7 @@
 """Pytest configuration and fixtures."""
 import pytest
 from app import create_app, db
-from app.models import Person, Household, Event
+from app.models import Person, Household, Event, EventInvitation
 
 
 @pytest.fixture
@@ -71,13 +71,26 @@ def sample_event(app, sample_person):
     """Create a sample event for testing."""
     from datetime import datetime, timedelta
     from app.services import EventService
-    
+
     event = EventService.create_event(
         title="Test Event",
         event_date=datetime.now() + timedelta(days=30),
         created_by_person_id=sample_person.id,
         description="Test event description"
     )
-    
+
     return event
+
+
+@pytest.fixture
+def sample_invitation(app, sample_event, sample_household):
+    """Create a sample invitation for testing."""
+    invitation = EventInvitation(
+        event_id=sample_event.id,
+        household_id=sample_household.id
+    )
+    db.session.add(invitation)
+    db.session.commit()
+
+    return invitation
 

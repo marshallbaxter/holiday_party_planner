@@ -135,6 +135,24 @@ class EventInvitation(db.Model):
             _external=_external,
         )
 
+    def get_event_url(self, _external=True):
+        """Get the event public page URL with token.
+
+        This URL directs guests to the event detail page where they can see
+        event information and their RSVP status before updating their response.
+        """
+        from flask import url_for
+
+        if not self.invitation_token:
+            self.generate_token()
+
+        return url_for(
+            "public.event_detail",
+            event_uuid=self.event.uuid,
+            token=self.invitation_token,
+            _external=_external,
+        )
+
     @property
     def is_sent(self):
         """Check if invitation has been sent."""

@@ -5,7 +5,7 @@ from app.models import Event, EventInvitation, RSVP, PotluckItem, MessageWallPos
 from app.utils.decorators import valid_rsvp_token_required
 from app.services.rsvp_service import RSVPService
 from app.services.potluck_service import PotluckService
-from app.forms.potluck_forms import PotluckItemForm
+from app.forms.potluck_forms import PotluckItemForm, ClaimSuggestedItemForm
 from collections import defaultdict
 import json
 
@@ -16,6 +16,71 @@ bp = Blueprint("public", __name__)
 def index():
     """Homepage."""
     return render_template("public/index.html")
+
+
+@bp.route("/r/<short_token>")
+def short_rsvp_redirect(short_token):
+    """Redirect from short SMS-friendly URL to full event detail page.
+
+    This route is used in SMS invitations to provide a short, SMS-friendly URL
+    that redirects to the full event detail page with the proper authentication token.
+    This is the household-level short link (legacy).
+    """
+    invitation = EventInvitation.get_by_short_token(short_token)
+
+    if not invitation:
+        flash("Invalid or expired invitation link.", "error")
+        return redirect(url_for("public.index"))
+
+    # Ensure the invitation has a full token
+    if not invitation.invitation_token:
+        invitation.generate_token()
+        db.session.commit()
+
+    # Redirect to event detail page with full token
+    return redirect(url_for(
+        "public.event_detail",
+        event_uuid=invitation.event.uuid,
+        token=invitation.invitation_token,
+    ))
+
+
+@bp.route("/i/<short_token>")
+def person_short_redirect(short_token):
+    """Redirect from person-specific short URL to event detail page.
+
+    This route handles person-specific invitation links, which allows:
+    - Personalized landing page experience (showing the person's name)
+    - Individual RSVP tracking
+    - Pre-filling forms with the person's information
+
+    The person_id is stored in the session for personalization.
+    """
+    from app.models.person_invitation_link import PersonInvitationLink
+
+    link = PersonInvitationLink.get_by_short_token(short_token)
+
+    if not link:
+        flash("Invalid or expired invitation link.", "error")
+        return redirect(url_for("public.index"))
+
+    invitation = link.invitation
+    person = link.person
+
+    # Ensure the invitation has a full token
+    if not invitation.invitation_token:
+        invitation.generate_token()
+        db.session.commit()
+
+    # Store the person_id in session for personalization
+    session["invited_person_id"] = person.id
+
+    # Redirect to event detail page with full token
+    return redirect(url_for(
+        "public.event_detail",
+        event_uuid=invitation.event.uuid,
+        token=invitation.invitation_token,
+    ))
 
 
 @bp.route("/guest/dashboard")
@@ -80,8 +145,10 @@ def event_detail(event_uuid):
     # Get dietary restrictions for attending guests
     dietary_restrictions = event.get_dietary_restrictions()
 
-    # Get potluck items
-    potluck_items = event.potluck_items.all()
+    # Get potluck items - separate freeform and suggested
+    potluck_items = PotluckService.get_freeform_items(event)
+    suggested_items = PotluckService.get_suggested_items(event)
+    suggested_items_by_category = PotluckService.get_suggested_items_by_category(event)
 
     # Get message wall posts
     message_posts = event.message_posts.order_by(
@@ -187,12 +254,24 @@ def event_detail(event_uuid):
     # Get current person ID for template
     current_person_id = session.get("person_id")
 
+    # Category display names for suggested items
+    category_names = {
+        "main": "🍖 Main Dishes",
+        "side": "🥗 Side Dishes",
+        "dessert": "🍰 Desserts",
+        "drink": "🥤 Beverages",
+        "other": "📦 Other",
+    }
+
     return render_template(
         "public/event_detail.html",
         event=event,
         rsvp_stats=rsvp_stats,
         dietary_restrictions=dietary_restrictions,
         potluck_items=potluck_items,
+        suggested_items=suggested_items,
+        suggested_items_by_category=suggested_items_by_category,
+        category_names=category_names,
         message_posts=message_posts,
         user_rsvp_data=user_rsvp_data,
         current_person_id=current_person_id,
@@ -747,3 +826,180 @@ def post_message(event_uuid):
 
     return redirect(url_for("public.event_detail", event_uuid=event_uuid))
 
+
+# ==================== Suggested Potluck Item Claim Routes ====================
+
+
+@bp.route("/event/<uuid:event_uuid>/potluck/suggested/<int:item_id>/claim", methods=["POST"])
+def claim_suggested_item(event_uuid, item_id):
+    """Claim a suggested potluck item with optional notes and dietary tags."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    item = PotluckItem.query.get_or_404(item_id)
+
+    # Verify item belongs to this event and is a suggested item
+    if item.event_id != event.id or not item.is_suggested:
+        flash("Item not found.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+    # Check authentication - either logged in or has valid token
+    person = None
+    token = request.args.get("token") or request.form.get("token")
+
+    # Check session first (logged in organizer)
+    if session.get("person_id"):
+        person = Person.query.get(session.get("person_id"))
+
+    # Check token (guest with invitation)
+    if not person and token:
+        invitation = EventInvitation.verify_token(token)
+        if invitation and invitation.event_id == event.id:
+            # Get the first person from the household
+            household = invitation.household
+            if household and household.active_members:
+                person = household.active_members[0]
+
+    if not person:
+        flash("Please log in or use your invitation link to claim items.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+    # Check if item is already claimed
+    if item.claimed_by_person_id is not None:
+        flash("This item has already been claimed.", "info")
+    else:
+        # Get optional notes and dietary tags from form
+        claimer_notes = request.form.get("claimer_notes", "").strip() or None
+        claimer_dietary_tags_str = request.form.get("claimer_dietary_tags", "")
+        claimer_dietary_tags = None
+        if claimer_dietary_tags_str:
+            try:
+                claimer_dietary_tags = json.loads(claimer_dietary_tags_str)
+            except (json.JSONDecodeError, TypeError):
+                claimer_dietary_tags = None
+
+        result = PotluckService.claim_suggested_item(
+            item, person,
+            claimer_notes=claimer_notes,
+            claimer_dietary_tags=claimer_dietary_tags
+        )
+        if result:
+            flash(f"You've claimed '{item.name}'!", "success")
+        else:
+            flash("Unable to claim this item.", "error")
+
+    # Redirect back with token if present
+    if token:
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+    else:
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/potluck/suggested/<int:item_id>/unclaim", methods=["POST"])
+def unclaim_suggested_item(event_uuid, item_id):
+    """Unclaim a suggested potluck item."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    item = PotluckItem.query.get_or_404(item_id)
+
+    # Verify item belongs to this event and is a suggested item
+    if item.event_id != event.id or not item.is_suggested:
+        flash("Item not found.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+    # Check authentication - either logged in or has valid token
+    person = None
+    token = request.args.get("token") or request.form.get("token")
+
+    # Check session first (logged in organizer)
+    if session.get("person_id"):
+        person = Person.query.get(session.get("person_id"))
+
+    # Check token (guest with invitation)
+    if not person and token:
+        invitation = EventInvitation.verify_token(token)
+        if invitation and invitation.event_id == event.id:
+            # Get the first person from the household
+            household = invitation.household
+            if household and household.active_members:
+                person = household.active_members[0]
+
+    if not person:
+        flash("Please log in or use your invitation link to unclaim items.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+    # Check if item is claimed by this person
+    if item.claimed_by_person_id != person.id:
+        flash("You can only unclaim items you've claimed.", "error")
+    else:
+        result = PotluckService.unclaim_suggested_item(item, person)
+        if result:
+            flash(f"You've unclaimed '{item.name}'.", "success")
+        else:
+            flash("Unable to unclaim this item.", "error")
+
+    # Redirect back with token if present
+    if token:
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+    else:
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/potluck/suggested/<int:item_id>/edit-claim", methods=["POST"])
+def edit_claim_details(event_uuid, item_id):
+    """Edit the details (notes, dietary tags) of a claimed suggested item."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    item = PotluckItem.query.get_or_404(item_id)
+
+    # Verify item belongs to this event and is a suggested item
+    if item.event_id != event.id or not item.is_suggested:
+        flash("Item not found.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+    # Check authentication - either logged in or has valid token
+    person = None
+    token = request.args.get("token") or request.form.get("token")
+
+    # Check session first (logged in organizer)
+    if session.get("person_id"):
+        person = Person.query.get(session.get("person_id"))
+
+    # Check token (guest with invitation)
+    if not person and token:
+        invitation = EventInvitation.verify_token(token)
+        if invitation and invitation.event_id == event.id:
+            # Get the first person from the household
+            household = invitation.household
+            if household and household.active_members:
+                person = household.active_members[0]
+
+    if not person:
+        flash("Please log in or use your invitation link to edit items.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+    # Check if item is claimed by this person
+    if item.claimed_by_person_id != person.id:
+        flash("You can only edit items you've claimed.", "error")
+    else:
+        # Get notes and dietary tags from form
+        claimer_notes = request.form.get("claimer_notes", "").strip() or None
+        claimer_dietary_tags_str = request.form.get("claimer_dietary_tags", "")
+        claimer_dietary_tags = None
+        if claimer_dietary_tags_str:
+            try:
+                claimer_dietary_tags = json.loads(claimer_dietary_tags_str)
+            except (json.JSONDecodeError, TypeError):
+                claimer_dietary_tags = None
+
+        result = PotluckService.update_claim_details(
+            item, person,
+            claimer_notes=claimer_notes,
+            claimer_dietary_tags=claimer_dietary_tags
+        )
+        if result:
+            flash(f"Updated details for '{item.name}'.", "success")
+        else:
+            flash("Unable to update this item.", "error")
+
+    # Redirect back with token if present
+    if token:
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+    else:
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid))

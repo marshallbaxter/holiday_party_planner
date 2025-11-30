@@ -45,6 +45,11 @@ class Config:
     BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL")
     BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "Holiday Party Planner")
 
+    # Brevo SMS Configuration
+    # SMS sender name (alphanumeric, max 11 chars for most countries)
+    # Note: Some countries require pre-registered sender IDs
+    BREVO_SMS_SENDER_NAME = os.environ.get("BREVO_SMS_SENDER_NAME", "HolidayParty")
+
     # Flask-Mail Configuration (fallback/testing)
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp-relay.brevo.com")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))

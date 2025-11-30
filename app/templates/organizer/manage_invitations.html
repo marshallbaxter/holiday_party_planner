@@ -28,17 +28,24 @@
         <div class="text-3xl font-bold text-gray-900">{{ invitation_stats.total }}</div>
     </div>
     <div class="bg-white rounded-lg shadow p-6">
-        <div class="text-sm font-medium text-gray-600 mb-1">Pending</div>
+        <div class="text-sm font-medium text-gray-600 mb-1">📧 Email Pending</div>
         <div class="text-3xl font-bold text-amber-600">{{ invitation_stats.pending }}</div>
     </div>
     <div class="bg-white rounded-lg shadow p-6">
-        <div class="text-sm font-medium text-gray-600 mb-1">Sent</div>
-        <div class="text-3xl font-bold text-green-600">{{ invitation_stats.sent }}</div>
+        <div class="text-sm font-medium text-gray-600 mb-1">📧 Email Sent</div>
+        <div class="text-3xl font-bold text-green-600">{{ invitation_stats.email_sent|default(invitation_stats.sent) }}</div>
     </div>
+    {% if sms_enabled %}
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">📱 SMS Sent</div>
+        <div class="text-3xl font-bold text-blue-600">{{ invitation_stats.sms_sent|default(0) }}</div>
+    </div>
+    {% else %}
     <div class="bg-white rounded-lg shadow p-6">
         <div class="text-sm font-medium text-gray-600 mb-1">No Email</div>
         <div class="text-3xl font-bold text-red-600">{{ invitation_stats.no_email }}</div>
     </div>
+    {% endif %}
 </div>
 
 <!-- Bulk Actions -->
@@ -114,9 +121,17 @@
                         </div>
                     </div>
 
-                    {% if invitation.is_sent %}
+                    {% if invitation.is_sent or invitation.is_sms_sent %}
                     <div class="text-xs text-gray-500 mb-3">
-                        Last household-wide send: {{ invitation.last_sent_at|datetime('%b %d, %Y at %I:%M %p') }}
+                        {% if invitation.is_sent %}
+                            📧 Last email: {{ invitation.last_sent_at|datetime('%b %d, %Y at %I:%M %p') }}
+                            {% if invitation.sent_count > 1 %}({{ invitation.sent_count }}x){% endif %}
+                        {% endif %}
+                        {% if sms_enabled and invitation.is_sms_sent %}
+                            {% if invitation.is_sent %}<br>{% endif %}
+                            📱 Last SMS: {{ invitation.sms_last_sent_at|datetime('%b %d, %Y at %I:%M %p') }}
+                            {% if invitation.sms_sent_count > 1 %}({{ invitation.sms_sent_count }}x){% endif %}
+                        {% endif %}
                     </div>
                     {% endif %}
 
@@ -124,32 +139,72 @@
                     <div class="ml-4 space-y-2">
                         {% for member in invitation.household.active_members %}
                             <div class="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-md">
-                                <div class="flex items-center space-x-3">
+                                <div class="flex items-center flex-wrap gap-2">
                                     <span class="text-gray-900 font-medium">{{ member.full_name }}</span>
                                     {% if member.role == 'child' %}
                                         <span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Child</span>
                                     {% endif %}
-                                    {% if member.email %}
-                                        <span class="text-sm text-gray-500">{{ member.email }}</span>
-                                    {% else %}
-                                        <span class="text-xs text-red-500">No email</span>
+                                    <span class="flex gap-2 text-sm text-gray-500">
+                                        {% if member.email %}
+                                            <span>{{ member.email }}</span>
+                                        {% endif %}
+                                        {% if member.phone %}
+                                            <span class="text-gray-400">|</span>
+                                            <span>{{ member.phone|phone }}</span>
+                                        {% endif %}
+                                    </span>
+                                    {% if not member.email and not member.phone %}
+                                        <span class="text-xs text-red-500">No contact info</span>
                                     {% endif %}
                                 </div>
 
-                                <div>
+                                <div class="flex items-center gap-2">
+                                    {# Email Send Button #}
                                     {% if member.email %}
                                         <form method="POST"
                                               action="{{ url_for('organizer.send_invitation_to_person', event_uuid=event.uuid, invitation_id=invitation.id, person_id=member.id) }}"
                                               class="inline">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <button type="submit"
-                                                    class="inline-flex items-center px-3 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                                                📧 Send
+                                                    class="inline-flex items-center px-3 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                    title="Send email invitation">
+                                                📧 Email
                                             </button>
                                         </form>
                                     {% else %}
-                                        <span class="text-xs text-gray-400 italic">Cannot send</span>
+                                        <span class="text-xs text-gray-400 italic px-2" title="No email address">📧 —</span>
                                     {% endif %}
+
+                                    {# SMS Send Button (only if SMS is enabled) #}
+                                    {% if sms_enabled %}
+                                        {% if member.phone %}
+                                            <form method="POST"
+                                                  action="{{ url_for('organizer.send_sms_to_person', event_uuid=event.uuid, invitation_id=invitation.id, person_id=member.id) }}"
+                                                  class="inline">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <button type="submit"
+                                                        class="inline-flex items-center px-3 py-1 border border-blue-300 rounded text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                        title="Send SMS invitation">
+                                                    📱 SMS
+                                                </button>
+                                            </form>
+                                        {% else %}
+                                            <span class="text-xs text-gray-400 italic px-2" title="No phone number">📱 —</span>
+                                        {% endif %}
+                                    {% endif %}
+
+                                    {# Copy Link Button - person-specific link for manual sharing #}
+                                    <button type="button"
+                                            onclick="copyInviteLink('{{ invitation.get_person_short_url(member) }}', this)"
+                                            class="inline-flex items-center px-3 py-1 border border-purple-300 rounded text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                            title="Copy {{ member.first_name }}'s personal invitation link to share via WhatsApp, iMessage, Signal, etc.">
+                                        🔗 Copy
+                                    </button>
+                                </div>
+                                {# Show the actual link for easy copying/testing #}
+                                <div class="mt-1 ml-4">
+                                    <code class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded select-all cursor-text"
+                                          title="Click to select, then Cmd+C to copy">{{ invitation.get_person_short_url(member) }}</code>
                                 </div>
                             </div>
                         {% endfor %}
@@ -172,12 +227,73 @@
 <div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
     <h3 class="text-sm font-medium text-blue-800 mb-2">💡 Tips</h3>
     <ul class="text-sm text-blue-700 list-disc list-inside space-y-1">
-        <li><strong>Send to All</strong> - Send the invitation email to everyone in the household with an email address</li>
-        <li><strong>Send (per person)</strong> - Send the invitation to just one specific person</li>
-        <li>Members without email addresses cannot receive invitations</li>
+        <li><strong>📧 Email</strong> - Send email invitation to a person (requires email address)</li>
+        {% if sms_enabled %}
+        <li><strong>📱 SMS</strong> - Send SMS invitation to a person (requires phone number)</li>
+        {% endif %}
+        <li><strong>🔗 Copy Link</strong> - Copy a short invitation link to share via WhatsApp, iMessage, Signal, or any messaging app</li>
+        <li><strong>Send to All</strong> - Send email invitations to everyone in the household with an email address</li>
+        <li><strong>🔗 Copy Link</strong> - Copy a person's unique invitation link to share via WhatsApp, iMessage, Signal, or any messaging app</li>
+        <li>Each person gets their own personalized link for a customized experience</li>
+        <li>Members without contact information cannot receive invitations</li>
         <li>The household send count tracks bulk sends (not individual sends)</li>
         <li>Great for testing: send to yourself first before sending to everyone</li>
     </ul>
 </div>
+
+{% if not sms_enabled %}
+<!-- SMS Disabled Notice -->
+<div class="mt-4 bg-gray-50 border border-gray-200 rounded-md p-4">
+    <div class="flex items-center">
+        <span class="text-gray-500 mr-2">📱</span>
+        <span class="text-sm text-gray-600">SMS invitations are currently disabled. Use <strong>🔗 Copy Link</strong> to manually share invitation links via any messaging app.</span>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyInviteLink(url, button) {
+    // Store original content
+    const originalText = button.innerHTML;
+
+    function showSuccess() {
+        button.innerHTML = '✓ Copied!';
+        button.classList.remove('text-purple-700', 'bg-purple-50', 'border-purple-300', 'hover:bg-purple-100');
+        button.classList.add('text-green-700', 'bg-green-50', 'border-green-300');
+        setTimeout(function() {
+            button.innerHTML = originalText;
+            button.classList.remove('text-green-700', 'bg-green-50', 'border-green-300');
+            button.classList.add('text-purple-700', 'bg-purple-50', 'border-purple-300', 'hover:bg-purple-100');
+        }, 2000);
+    }
+
+    function fallbackCopy() {
+        // Create a temporary textarea element
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showSuccess();
+        } catch (err) {
+            console.error('Fallback copy failed:', err);
+            prompt('Copy this invitation link (Cmd+C):', url);
+        }
+        document.body.removeChild(textarea);
+    }
+
+    // Try modern clipboard API first, fall back to execCommand
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(showSuccess).catch(fallbackCopy);
+    } else {
+        fallbackCopy();
+    }
+}
+</script>
 {% endblock %}
 

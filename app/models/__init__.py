@@ -9,6 +9,7 @@ from app.models.message import MessageWallPost
 from app.models.notification import Notification
 from app.models.auth_token import AuthToken
 from app.models.tag import Tag, PersonTag
+from app.models.person_invitation_link import PersonInvitationLink
 
 __all__ = [
     "Person",
@@ -26,5 +27,6 @@ __all__ = [
     "AuthToken",
     "Tag",
     "PersonTag",
+    "PersonInvitationLink",
 ]
 

@@ -254,7 +254,97 @@
         {% endif %}
     </div>
 
-    <!-- Potluck Items -->
+    <!-- Suggested Potluck Items (Host Suggestions) -->
+    {% if suggested_items %}
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <div class="mb-6">
+            <h2 class="text-2xl font-semibold text-gray-900">📋 Items Needed</h2>
+            <p class="text-gray-600 text-sm mt-1">The host is looking for guests to bring these items</p>
+        </div>
+
+        {% for category, items in suggested_items_by_category.items() %}
+            {% if items %}
+            <div class="mb-6 last:mb-0">
+                <h3 class="text-lg font-medium text-gray-800 mb-3">{{ category_names.get(category, category|title) }}</h3>
+                <div class="space-y-3">
+                    {% for item in items %}
+                    <div class="p-4 bg-gray-50 rounded-lg border {% if item.claimed_by %}border-green-200 bg-green-50{% else %}border-gray-200{% endif %}">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium text-gray-900">{{ item.name }}</span>
+                                </div>
+                                {% if item.notes %}
+                                    <p class="text-sm text-gray-600 mt-1 italic">Host notes: {{ item.notes }}</p>
+                                {% endif %}
+                            </div>
+                            <div class="ml-4 flex-shrink-0">
+                                {% if user_rsvp_data %}
+                                    {% if item.claimed_by_person_id == current_person_id %}
+                                        <!-- User claimed this item - show edit and unclaim buttons -->
+                                        <div class="flex gap-2">
+                                            <button type="button" onclick="openEditClaimModal({{ item.id }}, '{{ item.name|e }}', '{{ item.claimer_notes|default('', true)|e }}', {{ item.get_claimer_dietary_tags_list()|tojson }})"
+                                                    class="px-3 py-1.5 text-indigo-600 hover:text-indigo-800 text-sm font-medium">
+                                                Edit
+                                            </button>
+                                            <form method="POST" action="{{ url_for('public.unclaim_suggested_item', event_uuid=event.uuid, item_id=item.id, token=user_rsvp_data.token) if user_rsvp_data.token else url_for('public.unclaim_suggested_item', event_uuid=event.uuid, item_id=item.id) }}"
+                                                  class="inline">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                                <input type="hidden" name="token" value="{{ user_rsvp_data.token }}"/>
+                                                <button type="submit" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium">
+                                                    Unclaim
+                                                </button>
+                                            </form>
+                                        </div>
+                                    {% elif not item.claimed_by %}
+                                        <!-- Item is unclaimed - show claim button that opens modal -->
+                                        <button type="button" onclick="openClaimModal({{ item.id }}, '{{ item.name|e }}')"
+                                                class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium">
+                                            I'll Bring This
+                                        </button>
+                                    {% else %}
+                                        <!-- Item is claimed by someone else -->
+                                        <span class="text-gray-400 text-sm">Claimed</span>
+                                    {% endif %}
+                                {% else %}
+                                    {% if item.claimed_by %}
+                                        <span class="text-green-600 text-sm">✓ Claimed</span>
+                                    {% else %}
+                                        <span class="text-yellow-600 text-sm">Needed</span>
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <!-- Claim details section -->
+                        {% if item.claimed_by %}
+                        <div class="mt-3 pt-3 border-t border-green-200">
+                            <div class="flex items-center gap-2 text-sm text-green-800">
+                                <span class="font-medium">✓ {{ item.claimed_by.full_name }}</span>
+                                {% if item.claimer_notes %}
+                                    <span class="text-green-700">— {{ item.claimer_notes }}</span>
+                                {% endif %}
+                            </div>
+                            {% if item.get_claimer_dietary_tags_list() %}
+                            <div class="flex flex-wrap gap-1 mt-2">
+                                {% for tag in item.get_claimer_dietary_tags_list() %}
+                                <span class="inline-block px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">
+                                    {{ tag }}
+                                </span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Potluck Items (Guest Contributions) -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-8">
         <div class="flex justify-between items-center mb-6">
             <h2 class="text-2xl font-semibold text-gray-900">🍽️ What We're Bringing</h2>
@@ -599,6 +689,269 @@ async function removeDietaryTag(tagName, personId) {
         alert('Failed to remove dietary restriction. Please try again.');
     }
 }
+</script>
+{% endif %}
+
+<!-- Claim Suggested Item Modal -->
+{% if user_rsvp_data and suggested_items %}
+<div id="claimModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-900" id="claimModalTitle">Claim Item</h3>
+                <button type="button" onclick="closeClaimModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <form id="claimForm" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="token" value="{{ user_rsvp_data.token }}"/>
+
+                <div class="mb-4">
+                    <label for="claimer_notes" class="block text-sm font-medium text-gray-700 mb-1">
+                        What are you bringing? <span class="text-gray-400">(optional)</span>
+                    </label>
+                    <textarea id="claimer_notes" name="claimer_notes" rows="2"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              placeholder="e.g., Homemade mac and cheese with three cheeses"></textarea>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Dietary Tags <span class="text-gray-400">(optional)</span>
+                    </label>
+                    <div id="claimDietaryTagsContainer" class="flex flex-wrap gap-1 mb-2"></div>
+                    <div class="relative">
+                        <input type="text" id="claimTagInput"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                               placeholder="Type to add tags (e.g., vegetarian, gluten-free)"
+                               autocomplete="off">
+                        <div id="claimTagSuggestions" class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg hidden mt-1 max-h-40 overflow-y-auto"></div>
+                    </div>
+                    <input type="hidden" id="claimer_dietary_tags" name="claimer_dietary_tags" value="[]"/>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" onclick="closeClaimModal()"
+                            class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                        Claim Item
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Claim Modal -->
+<div id="editClaimModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-900" id="editClaimModalTitle">Edit Claim Details</h3>
+                <button type="button" onclick="closeEditClaimModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <form id="editClaimForm" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="token" value="{{ user_rsvp_data.token }}"/>
+
+                <div class="mb-4">
+                    <label for="edit_claimer_notes" class="block text-sm font-medium text-gray-700 mb-1">
+                        What are you bringing? <span class="text-gray-400">(optional)</span>
+                    </label>
+                    <textarea id="edit_claimer_notes" name="claimer_notes" rows="2"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              placeholder="e.g., Homemade mac and cheese with three cheeses"></textarea>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Dietary Tags <span class="text-gray-400">(optional)</span>
+                    </label>
+                    <div id="editClaimDietaryTagsContainer" class="flex flex-wrap gap-1 mb-2"></div>
+                    <div class="relative">
+                        <input type="text" id="editClaimTagInput"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                               placeholder="Type to add tags (e.g., vegetarian, gluten-free)"
+                               autocomplete="off">
+                        <div id="editClaimTagSuggestions" class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg hidden mt-1 max-h-40 overflow-y-auto"></div>
+                    </div>
+                    <input type="hidden" id="edit_claimer_dietary_tags" name="claimer_dietary_tags" value="[]"/>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" onclick="closeEditClaimModal()"
+                            class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Claim modal state
+let claimDietaryTags = [];
+let editClaimDietaryTags = [];
+
+function openClaimModal(itemId, itemName) {
+    claimDietaryTags = [];
+    document.getElementById('claimModalTitle').textContent = `Claim: ${itemName}`;
+    document.getElementById('claimForm').action = `{{ url_for('public.claim_suggested_item', event_uuid=event.uuid, item_id=0) }}`.replace('/0/', `/${itemId}/`);
+    document.getElementById('claimer_notes').value = '';
+    document.getElementById('claimer_dietary_tags').value = '[]';
+    renderClaimTags();
+    document.getElementById('claimModal').classList.remove('hidden');
+}
+
+function closeClaimModal() {
+    document.getElementById('claimModal').classList.add('hidden');
+}
+
+function openEditClaimModal(itemId, itemName, existingNotes, existingTags) {
+    editClaimDietaryTags = existingTags || [];
+    document.getElementById('editClaimModalTitle').textContent = `Edit: ${itemName}`;
+    document.getElementById('editClaimForm').action = `{{ url_for('public.edit_claim_details', event_uuid=event.uuid, item_id=0) }}`.replace('/0/', `/${itemId}/`);
+    document.getElementById('edit_claimer_notes').value = existingNotes || '';
+    document.getElementById('edit_claimer_dietary_tags').value = JSON.stringify(editClaimDietaryTags);
+    renderEditClaimTags();
+    document.getElementById('editClaimModal').classList.remove('hidden');
+}
+
+function closeEditClaimModal() {
+    document.getElementById('editClaimModal').classList.add('hidden');
+}
+
+function renderClaimTags() {
+    const container = document.getElementById('claimDietaryTagsContainer');
+    container.innerHTML = claimDietaryTags.map(tag => `
+        <span class="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-800 rounded text-sm">
+            ${tag}
+            <button type="button" onclick="removeClaimTag('${tag}')" class="text-indigo-600 hover:text-indigo-800">&times;</button>
+        </span>
+    `).join('');
+    document.getElementById('claimer_dietary_tags').value = JSON.stringify(claimDietaryTags);
+}
+
+function renderEditClaimTags() {
+    const container = document.getElementById('editClaimDietaryTagsContainer');
+    container.innerHTML = editClaimDietaryTags.map(tag => `
+        <span class="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-800 rounded text-sm">
+            ${tag}
+            <button type="button" onclick="removeEditClaimTag('${tag}')" class="text-indigo-600 hover:text-indigo-800">&times;</button>
+        </span>
+    `).join('');
+    document.getElementById('edit_claimer_dietary_tags').value = JSON.stringify(editClaimDietaryTags);
+}
+
+function addClaimTag(tagName) {
+    tagName = tagName.trim();
+    if (tagName && !claimDietaryTags.includes(tagName)) {
+        claimDietaryTags.push(tagName);
+        renderClaimTags();
+    }
+    document.getElementById('claimTagInput').value = '';
+    document.getElementById('claimTagSuggestions').classList.add('hidden');
+}
+
+function addEditClaimTag(tagName) {
+    tagName = tagName.trim();
+    if (tagName && !editClaimDietaryTags.includes(tagName)) {
+        editClaimDietaryTags.push(tagName);
+        renderEditClaimTags();
+    }
+    document.getElementById('editClaimTagInput').value = '';
+    document.getElementById('editClaimTagSuggestions').classList.add('hidden');
+}
+
+function removeClaimTag(tagName) {
+    claimDietaryTags = claimDietaryTags.filter(t => t !== tagName);
+    renderClaimTags();
+}
+
+function removeEditClaimTag(tagName) {
+    editClaimDietaryTags = editClaimDietaryTags.filter(t => t !== tagName);
+    renderEditClaimTags();
+}
+
+// Tag input handlers
+document.getElementById('claimTagInput')?.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addClaimTag(this.value);
+    }
+});
+
+document.getElementById('editClaimTagInput')?.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addEditClaimTag(this.value);
+    }
+});
+
+// Fetch tag suggestions for claim modal
+async function fetchClaimTagSuggestions(query, suggestionsId, addFunction) {
+    try {
+        const response = await fetch(`/api/tags?q=${encodeURIComponent(query)}&limit=10`);
+        const data = await response.json();
+        const suggestionsDiv = document.getElementById(suggestionsId);
+
+        if (data.tags && data.tags.length > 0) {
+            suggestionsDiv.innerHTML = '';
+            data.tags.forEach(tag => {
+                const div = document.createElement('div');
+                div.className = 'px-4 py-2 hover:bg-gray-100 cursor-pointer flex justify-between items-center text-sm';
+                div.innerHTML = `<span>${tag.name}</span><span class="text-xs text-gray-500">${tag.usage_count} uses</span>`;
+                div.onclick = () => addFunction(tag.name);
+                suggestionsDiv.appendChild(div);
+            });
+            suggestionsDiv.classList.remove('hidden');
+        } else {
+            suggestionsDiv.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error fetching tag suggestions:', error);
+    }
+}
+
+document.getElementById('claimTagInput')?.addEventListener('input', function() {
+    if (this.value.length >= 2) {
+        fetchClaimTagSuggestions(this.value, 'claimTagSuggestions', addClaimTag);
+    } else {
+        document.getElementById('claimTagSuggestions').classList.add('hidden');
+    }
+});
+
+document.getElementById('editClaimTagInput')?.addEventListener('input', function() {
+    if (this.value.length >= 2) {
+        fetchClaimTagSuggestions(this.value, 'editClaimTagSuggestions', addEditClaimTag);
+    } else {
+        document.getElementById('editClaimTagSuggestions').classList.add('hidden');
+    }
+});
+
+// Close modals when clicking outside
+document.getElementById('claimModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeClaimModal();
+});
+
+document.getElementById('editClaimModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeEditClaimModal();
+});
 </script>
 {% endif %}
 {% endblock %}

@@ -2,6 +2,7 @@
 from flask import current_app, render_template
 from app import db
 from app.models import Notification, EventInvitation
+from app.utils.phone_utils import format_phone_e164
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 
@@ -10,13 +11,28 @@ class NotificationService:
     """Service for sending notifications via email and SMS."""
 
     @staticmethod
-    def _get_brevo_api_instance():
-        """Get configured Brevo API instance."""
+    def _get_brevo_email_api_instance():
+        """Get configured Brevo Email API instance."""
         configuration = sib_api_v3_sdk.Configuration()
         configuration.api_key["api-key"] = current_app.config["BREVO_API_KEY"]
         return sib_api_v3_sdk.TransactionalEmailsApi(
             sib_api_v3_sdk.ApiClient(configuration)
         )
+
+    @staticmethod
+    def _get_brevo_sms_api_instance():
+        """Get configured Brevo SMS API instance."""
+        configuration = sib_api_v3_sdk.Configuration()
+        configuration.api_key["api-key"] = current_app.config["BREVO_API_KEY"]
+        return sib_api_v3_sdk.TransactionalSMSApi(
+            sib_api_v3_sdk.ApiClient(configuration)
+        )
+
+    # Backwards compatibility alias
+    @staticmethod
+    def _get_brevo_api_instance():
+        """Get configured Brevo API instance (backwards compatibility)."""
+        return NotificationService._get_brevo_email_api_instance()
 
     @staticmethod
     def send_email(to_email, to_name, subject, html_content, event=None, person=None):
@@ -101,6 +117,103 @@ class NotificationService:
             return False
 
     @staticmethod
+    def send_sms(to_phone, content, event=None, person=None):
+        """Send an SMS via Brevo.
+
+        Args:
+            to_phone: Recipient phone number (E.164 format preferred, e.g., +12025551234)
+            content: SMS message content (max 160 chars for single SMS)
+            event: Event object (optional, for logging)
+            person: Person object (optional, for logging)
+
+        Returns:
+            Boolean indicating success
+        """
+        if not current_app.config.get("ENABLE_SMS"):
+            current_app.logger.warning("SMS is disabled, skipping SMS send")
+            return False
+
+        if not current_app.config.get("BREVO_API_KEY"):
+            current_app.logger.warning("Brevo API key not configured, skipping SMS")
+            return False
+
+        # Validate and format phone number to E.164
+        if not to_phone:
+            current_app.logger.warning("No phone number provided for SMS")
+            return False
+
+        # Format to E.164 (e.g., +12025551234)
+        formatted_phone = format_phone_e164(to_phone)
+        if not formatted_phone:
+            current_app.logger.warning(
+                f"Invalid phone number format: {to_phone}. "
+                "Could not convert to E.164 format."
+            )
+            return False
+
+        try:
+            api_instance = NotificationService._get_brevo_sms_api_instance()
+
+            sender = current_app.config.get("BREVO_SMS_SENDER_NAME", "HolidayParty")
+
+            send_transac_sms = sib_api_v3_sdk.SendTransacSms(
+                sender=sender,
+                recipient=formatted_phone,
+                content=content,
+                type="transactional"
+            )
+
+            api_response = api_instance.send_transac_sms(send_transac_sms)
+
+            # Log notification
+            if event and person:
+                notification = Notification(
+                    event_id=event.id,
+                    person_id=person.id,
+                    notification_type="invitation",
+                    channel="sms",
+                )
+                notification.mark_sent(provider_message_id=str(api_response.message_id))
+                db.session.add(notification)
+                db.session.commit()
+
+            current_app.logger.info(f"SMS sent successfully to {formatted_phone}")
+            return True
+
+        except ApiException as e:
+            current_app.logger.error(f"Brevo API error sending SMS to {formatted_phone}: {e}")
+
+            # Log failed notification
+            if event and person:
+                notification = Notification(
+                    event_id=event.id,
+                    person_id=person.id,
+                    notification_type="invitation",
+                    channel="sms",
+                )
+                notification.mark_failed(error_message=str(e))
+                db.session.add(notification)
+                db.session.commit()
+
+            return False
+        except Exception as e:
+            current_app.logger.error(f"Unexpected error sending SMS to {formatted_phone}: {e}")
+
+            # Log failed notification
+            if event and person:
+                notification = Notification(
+                    event_id=event.id,
+                    person_id=person.id,
+                    notification_type="invitation",
+                    channel="sms",
+                )
+                notification.mark_failed(error_message=str(e))
+                db.session.add(notification)
+                db.session.commit()
+
+            return False
+
+    @staticmethod
     def send_invitation_email(invitation, contact_person):
         """Send invitation email to a specific household member.
 
@@ -131,6 +244,43 @@ class NotificationService:
             to_name=contact_person.full_name,
             subject=subject,
             html_content=html_content,
+            event=event,
+            person=contact_person,
+        )
+
+    @staticmethod
+    def send_invitation_sms(invitation, contact_person):
+        """Send invitation SMS to a specific household member.
+
+        Args:
+            invitation: EventInvitation object
+            contact_person: Person object to send invitation to
+
+        Returns:
+            Boolean indicating success
+        """
+        if not current_app.config.get("ENABLE_SMS"):
+            return False
+
+        event = invitation.event
+
+        if not contact_person or not contact_person.phone:
+            return False
+
+        # Note: opt-in check is handled at the service layer (InvitationService)
+        # When an organizer explicitly sends SMS, we allow it if person has a phone
+
+        # Generate SMS content using template
+        sms_content = render_template(
+            "sms/invitation.txt",
+            event=event,
+            invitation=invitation,
+            recipient=contact_person
+        )
+
+        return NotificationService.send_sms(
+            to_phone=contact_person.phone,
+            content=sms_content,
             event=event,
             person=contact_person,
         )

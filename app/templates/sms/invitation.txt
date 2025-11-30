@@ -1,0 +1,10 @@
+{#- SMS Invitation Template
+    Keep this message SHORT - SMS has 160 char limit for single message.
+    The template should produce ~100-140 characters to stay within limits.
+    Variables available:
+    - event: Event object with title, event_date, venue_name
+    - invitation: EventInvitation object with get_short_rsvp_url()
+    - recipient: Person object with first_name
+-#}
+Hi {{ recipient.first_name }}! You're invited to {{ event.title }}{% if event.event_date %} on {{ event.event_date.strftime('%b %d') }}{% endif %}. RSVP: {{ invitation.get_short_rsvp_url() }}
+

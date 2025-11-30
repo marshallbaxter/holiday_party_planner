@@ -1,4 +1,5 @@
 """Potluck service - business logic for potluck management."""
+from datetime import datetime
 from app import db
 from app.models import PotluckItem, PotluckClaim, Event, Person
 
@@ -220,4 +221,244 @@ class PotluckService:
         )
 
         return items
+
+    # ==================== Suggested Items Methods ====================
+
+    @staticmethod
+    def create_suggested_item(event, name, category="other", notes=None):
+        """Create a suggested potluck item (created by organizer for guests to claim).
+
+        Args:
+            event: Event object
+            name: Item name
+            category: Item category (main, side, dessert, drink, other)
+            notes: Additional notes/description
+
+        Returns:
+            Created PotluckItem object
+        """
+        item = PotluckItem(
+            event_id=event.id,
+            name=name,
+            category=category,
+            notes=notes,
+            is_suggested=True,
+        )
+
+        db.session.add(item)
+        db.session.commit()
+
+        return item
+
+    @staticmethod
+    def update_suggested_item(item, **kwargs):
+        """Update a suggested potluck item.
+
+        Args:
+            item: PotluckItem object (must be a suggested item)
+            **kwargs: Fields to update
+
+        Returns:
+            Updated PotluckItem object
+        """
+        if not item.is_suggested:
+            raise ValueError("Cannot use this method on non-suggested items")
+
+        allowed_fields = ["name", "category", "notes"]
+
+        for field, value in kwargs.items():
+            if field in allowed_fields:
+                setattr(item, field, value)
+
+        db.session.commit()
+
+        return item
+
+    @staticmethod
+    def delete_suggested_item(item):
+        """Delete a suggested potluck item.
+
+        Args:
+            item: PotluckItem object (must be a suggested item)
+
+        Returns:
+            Boolean indicating success
+        """
+        if not item.is_suggested:
+            raise ValueError("Cannot use this method on non-suggested items")
+
+        db.session.delete(item)
+        db.session.commit()
+
+        return True
+
+    @staticmethod
+    def claim_suggested_item(item, person, claimer_notes=None, claimer_dietary_tags=None):
+        """Claim a suggested potluck item.
+
+        Args:
+            item: PotluckItem object (must be a suggested item)
+            person: Person object claiming the item
+            claimer_notes: Optional notes from the claimer about what they're bringing
+            claimer_dietary_tags: Optional list of dietary tags for the item
+
+        Returns:
+            Updated PotluckItem object or None if already claimed
+        """
+        if not item.is_suggested:
+            raise ValueError("Cannot use this method on non-suggested items")
+
+        # Check if item is already claimed
+        if item.claimed_by_person_id is not None:
+            return None
+
+        item.claimed_by_person_id = person.id
+        item.claimed_at = datetime.utcnow()
+        item.claimer_notes = claimer_notes
+        item.claimer_dietary_tags = claimer_dietary_tags if claimer_dietary_tags else None
+
+        db.session.commit()
+
+        return item
+
+    @staticmethod
+    def update_claim_details(item, person, claimer_notes=None, claimer_dietary_tags=None):
+        """Update the details of a claimed suggested item.
+
+        Args:
+            item: PotluckItem object (must be a suggested item claimed by the person)
+            person: Person object who claimed the item
+            claimer_notes: Notes from the claimer about what they're bringing
+            claimer_dietary_tags: List of dietary tags for the item
+
+        Returns:
+            Updated PotluckItem object or None if not claimed by this person
+        """
+        if not item.is_suggested:
+            raise ValueError("Cannot use this method on non-suggested items")
+
+        # Check if item is claimed by this person
+        if item.claimed_by_person_id != person.id:
+            return None
+
+        item.claimer_notes = claimer_notes
+        item.claimer_dietary_tags = claimer_dietary_tags if claimer_dietary_tags else None
+
+        db.session.commit()
+
+        return item
+
+    @staticmethod
+    def unclaim_suggested_item(item, person):
+        """Unclaim a suggested potluck item.
+
+        Args:
+            item: PotluckItem object (must be a suggested item)
+            person: Person object unclaiming the item
+
+        Returns:
+            Updated PotluckItem object or None if not claimed by this person
+        """
+        if not item.is_suggested:
+            raise ValueError("Cannot use this method on non-suggested items")
+
+        # Check if item is claimed by this person
+        if item.claimed_by_person_id != person.id:
+            return None
+
+        item.claimed_by_person_id = None
+        item.claimed_at = None
+        item.claimer_notes = None
+        item.claimer_dietary_tags = None
+
+        db.session.commit()
+
+        return item
+
+    @staticmethod
+    def get_suggested_items(event):
+        """Get all suggested potluck items for an event.
+
+        Args:
+            event: Event object
+
+        Returns:
+            List of PotluckItem objects that are suggested items
+        """
+        return PotluckItem.query.filter_by(
+            event_id=event.id,
+            is_suggested=True
+        ).order_by(PotluckItem.category, PotluckItem.name).all()
+
+    @staticmethod
+    def get_suggested_items_by_category(event):
+        """Get suggested potluck items grouped by category.
+
+        Args:
+            event: Event object
+
+        Returns:
+            Dictionary mapping category to list of suggested items
+        """
+        items = PotluckService.get_suggested_items(event)
+        categories = {}
+
+        for item in items:
+            if item.category not in categories:
+                categories[item.category] = []
+            categories[item.category].append(item)
+
+        return categories
+
+    @staticmethod
+    def get_freeform_items(event):
+        """Get all freeform (non-suggested) potluck items for an event.
+
+        Args:
+            event: Event object
+
+        Returns:
+            List of PotluckItem objects that are freeform items
+        """
+        return PotluckItem.query.filter_by(
+            event_id=event.id,
+            is_suggested=False
+        ).order_by(PotluckItem.category, PotluckItem.name).all()
+
+    @staticmethod
+    def get_freeform_items_by_category(event):
+        """Get freeform potluck items grouped by category.
+
+        Args:
+            event: Event object
+
+        Returns:
+            Dictionary mapping category to list of freeform items
+        """
+        items = PotluckService.get_freeform_items(event)
+        categories = {}
+
+        for item in items:
+            if item.category not in categories:
+                categories[item.category] = []
+            categories[item.category].append(item)
+
+        return categories
+
+    @staticmethod
+    def get_person_suggested_claims(event, person):
+        """Get all suggested items claimed by a person for an event.
+
+        Args:
+            event: Event object
+            person: Person object
+
+        Returns:
+            List of PotluckItem objects (suggested items claimed by person)
+        """
+        return PotluckItem.query.filter_by(
+            event_id=event.id,
+            is_suggested=True,
+            claimed_by_person_id=person.id
+        ).all()
 

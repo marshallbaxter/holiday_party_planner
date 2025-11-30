@@ -91,9 +91,9 @@
         {% endif %}
     </a>
 
-    <a href="#" class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition">
+    <a href="{{ url_for('organizer.manage_potluck', event_uuid=event.uuid) }}" class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition">
         <h3 class="text-lg font-semibold text-gray-900 mb-2">🍽️ Manage Potluck</h3>
-        <p class="text-gray-600 text-sm">Set up potluck items and categories</p>
+        <p class="text-gray-600 text-sm">Set up suggested items for guests to claim</p>
     </a>
 </div>
 

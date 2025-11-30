@@ -1,7 +1,9 @@
 """Person model."""
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import event
 from app import db
+from app.utils.phone_utils import format_phone_e164, format_phone_display
 
 
 class Person(db.Model):
@@ -18,6 +20,12 @@ class Person(db.Model):
     role = db.Column(
         db.String(20), nullable=False, default="adult"
     )  # 'adult' or 'child'
+
+    # Communication preferences for notifications
+    preferred_contact_method = db.Column(
+        db.String(20), nullable=False, default="email"
+    )  # 'email', 'sms', 'both'
+    sms_opt_in = db.Column(db.Boolean, nullable=False, default=False)  # SMS consent
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -44,6 +52,10 @@ class Person(db.Model):
     )
     person_tags = db.relationship(
         "PersonTag", foreign_keys="PersonTag.person_id", back_populates="person", lazy="dynamic"
+    )
+    invitation_links = db.relationship(
+        "PersonInvitationLink", back_populates="person", lazy="dynamic",
+        cascade="all, delete-orphan"
     )
 
     def __repr__(self):
@@ -81,6 +93,28 @@ class Person(db.Model):
         """Get the primary household (first active household)."""
         households = self.active_households
         return households[0] if households else None
+
+    @property
+    def phone_display(self):
+        """Return phone number in user-friendly display format."""
+        return format_phone_display(self.phone) if self.phone else ""
+
+    def normalize_phone(self):
+        """Normalize the phone number to E.164 format.
+
+        This is called automatically before insert/update via SQLAlchemy event.
+        Can also be called manually if needed.
+
+        Returns:
+            The normalized phone number, or None if invalid
+        """
+        if self.phone:
+            normalized = format_phone_e164(self.phone)
+            if normalized:
+                self.phone = normalized
+            # If normalization fails, keep original value
+            # (allows storing numbers that may be valid but not US format)
+        return self.phone
 
     def get_rsvp_for_event(self, event_id):
         """Get RSVP for a specific event."""
@@ -195,6 +229,34 @@ class Person(db.Model):
 
         return True
 
+    @property
+    def can_receive_sms(self):
+        """Check if person can receive SMS notifications.
+
+        Returns True if:
+        - Person has a phone number
+        - Person has opted in to SMS
+        - Person's preferred contact method includes SMS ('sms' or 'both')
+        """
+        return (
+            self.phone
+            and self.sms_opt_in
+            and self.preferred_contact_method in ('sms', 'both')
+        )
+
+    @property
+    def can_receive_email(self):
+        """Check if person can receive email notifications.
+
+        Returns True if:
+        - Person has an email address
+        - Person's preferred contact method includes email ('email' or 'both')
+        """
+        return (
+            self.email
+            and self.preferred_contact_method in ('email', 'both')
+        )
+
     def to_dict(self):
         """Convert person to dictionary."""
         return {
@@ -205,8 +267,22 @@ class Person(db.Model):
             "email": self.email,
             "phone": self.phone,
             "role": self.role,
+            "preferred_contact_method": self.preferred_contact_method,
+            "sms_opt_in": self.sms_opt_in,
             "tags": [tag.name for tag in self.tags],
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
+
+# SQLAlchemy event listeners to normalize phone number before insert/update
+@event.listens_for(Person, "before_insert")
+def normalize_phone_before_insert(mapper, connection, target):
+    """Normalize phone number to E.164 format before inserting."""
+    target.normalize_phone()
+
+
+@event.listens_for(Person, "before_update")
+def normalize_phone_before_update(mapper, connection, target):
+    """Normalize phone number to E.164 format before updating."""
+    target.normalize_phone()

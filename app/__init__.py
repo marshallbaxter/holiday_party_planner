@@ -127,6 +127,17 @@ def register_template_helpers(app):
             return ""
         return value.strftime(format)
 
+    @app.template_filter("phone")
+    def format_phone(value):
+        """Format a phone number for display.
+
+        Converts E.164 format (+12025551234) to user-friendly format ((202) 555-1234).
+        """
+        if not value:
+            return ""
+        from app.utils.phone_utils import format_phone_display
+        return format_phone_display(value)
+
     @app.context_processor
     def inject_config():
         """Inject configuration variables into templates."""

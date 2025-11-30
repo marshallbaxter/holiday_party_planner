@@ -51,3 +51,62 @@ class PotluckItemForm(FlaskForm):
         }
     )
 
+
+class SuggestedPotluckItemForm(FlaskForm):
+    """Form for adding and editing suggested potluck items (organizer-created)."""
+
+    name = StringField(
+        'Item Name',
+        validators=[
+            DataRequired(message="Item name is required"),
+            Length(min=2, max=200, message="Item name must be between 2 and 200 characters")
+        ],
+        render_kw={"placeholder": "e.g., Appetizers, Main Dish, Dessert"}
+    )
+
+    category = SelectField(
+        'Category',
+        choices=[
+            ('main', '🍖 Main Dish'),
+            ('side', '🥗 Side Dish'),
+            ('dessert', '🍰 Dessert'),
+            ('drink', '🥤 Drink'),
+            ('other', '📦 Other')
+        ],
+        validators=[Optional()],
+        default='other'
+    )
+
+    notes = TextAreaField(
+        'Description/Notes',
+        validators=[
+            Optional(),
+            Length(max=500, message="Notes must be less than 500 characters")
+        ],
+        render_kw={
+            "placeholder": "e.g., Something to feed 8-10 people, homemade or store-bought",
+            "rows": 2
+        }
+    )
+
+
+class ClaimSuggestedItemForm(FlaskForm):
+    """Form for claiming a suggested potluck item with optional details."""
+
+    claimer_notes = TextAreaField(
+        'What are you bringing?',
+        validators=[
+            Optional(),
+            Length(max=500, message="Notes must be less than 500 characters")
+        ],
+        render_kw={
+            "placeholder": "e.g., Homemade mac and cheese with three cheeses",
+            "rows": 2
+        }
+    )
+
+    claimer_dietary_tags = HiddenField(
+        'Dietary Tags',
+        validators=[Optional()]
+    )
+

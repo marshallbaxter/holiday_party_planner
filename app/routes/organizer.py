@@ -1,13 +1,15 @@
 """Organizer routes - for event creators and admins."""
-from flask import Blueprint, render_template, redirect, url_for, flash, request, session
+from flask import Blueprint, render_template, redirect, url_for, flash, request, session, current_app, g
 from app import db
-from app.models import Event, Person, Household, EventAdmin, EventInvitation, RSVP
+from app.models import Event, Person, Household, EventAdmin, EventInvitation, RSVP, PotluckItem
 from app.utils.decorators import login_required, event_admin_required
 from app.forms.event_forms import EventForm
+from app.forms.potluck_forms import SuggestedPotluckItemForm
 from app.services.event_service import EventService
 from app.services.invitation_service import InvitationService
 from app.services.notification_service import NotificationService
 from app.services.rsvp_service import RSVPService
+from app.services.potluck_service import PotluckService
 
 bp = Blueprint("organizer", __name__, url_prefix="/organizer")
 
@@ -331,11 +333,15 @@ def manage_invitations(event_uuid):
     # Get invitation statistics
     invitation_stats = InvitationService.get_invitation_stats(event)
 
+    # Check if SMS is enabled
+    sms_enabled = current_app.config.get("ENABLE_SMS", False)
+
     return render_template(
         "organizer/manage_invitations.html",
         event=event,
         invitations=invitations,
         invitation_stats=invitation_stats,
+        sms_enabled=sms_enabled,
     )
 
 
@@ -494,6 +500,54 @@ def send_invitation_to_person(event_uuid, invitation_id, person_id):
                 )
     except Exception as e:
         flash(f"Error sending invitation: {str(e)}", "error")
+
+    return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/invitations/<int:invitation_id>/send-sms/<int:person_id>", methods=["POST"])
+@login_required
+@event_admin_required
+def send_sms_to_person(event_uuid, invitation_id, person_id):
+    """Send SMS invitation to a specific person within a household."""
+    # Check if SMS is enabled
+    if not current_app.config.get("ENABLE_SMS"):
+        flash("SMS invitations are not enabled.", "warning")
+        return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
+
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+
+    # Get the invitation
+    invitation = EventInvitation.query.filter_by(
+        id=invitation_id,
+        event_id=event.id
+    ).first_or_404()
+
+    # Get the person
+    person = Person.query.get_or_404(person_id)
+
+    # Verify person belongs to the household
+    if person not in invitation.household.active_members:
+        flash(f"{person.full_name} is not a member of {invitation.household.name}.", "error")
+        return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
+
+    # Check if person can receive SMS
+    if not person.phone:
+        flash(
+            f"Cannot send SMS to {person.full_name}. They don't have a phone number.",
+            "warning"
+        )
+        return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
+
+    try:
+        if InvitationService.send_invitation_to_person(invitation, person, channel='sms'):
+            flash(f"SMS invitation sent to {person.full_name}!", "success")
+        else:
+            flash(
+                f"Could not send SMS to {person.full_name}. Please try again.",
+                "warning"
+            )
+    except Exception as e:
+        flash(f"Error sending SMS invitation: {str(e)}", "error")
 
     return redirect(url_for("organizer.manage_invitations", event_uuid=event_uuid))
 
@@ -733,4 +787,119 @@ def dev_switch_user(person_id):
 
     flash(f"Switched to {person.full_name}", "success")
     return redirect(next_url)
+
+
+# ==================== Potluck Management Routes ====================
+
+
+@bp.route("/event/<uuid:event_uuid>/potluck")
+@login_required
+@event_admin_required
+def manage_potluck(event_uuid):
+    """Manage potluck items for an event."""
+    event = g.current_event
+
+    # Get suggested items grouped by category
+    suggested_items_by_category = PotluckService.get_suggested_items_by_category(event)
+
+    # Get freeform items grouped by category
+    freeform_items_by_category = PotluckService.get_freeform_items_by_category(event)
+
+    # Category display names
+    category_names = {
+        "main": "Main Dishes",
+        "side": "Side Dishes",
+        "dessert": "Desserts",
+        "drink": "Beverages",
+        "other": "Other",
+    }
+
+    # Create form for adding new suggested items
+    form = SuggestedPotluckItemForm()
+
+    return render_template(
+        "organizer/manage_potluck.html",
+        event=event,
+        suggested_items_by_category=suggested_items_by_category,
+        freeform_items_by_category=freeform_items_by_category,
+        category_names=category_names,
+        form=form,
+    )
+
+
+@bp.route("/event/<uuid:event_uuid>/potluck/suggested/add", methods=["POST"])
+@login_required
+@event_admin_required
+def add_suggested_item(event_uuid):
+    """Add a suggested potluck item."""
+    event = g.current_event
+    form = SuggestedPotluckItemForm()
+
+    if form.validate_on_submit():
+        PotluckService.create_suggested_item(
+            event=event,
+            name=form.name.data,
+            category=form.category.data,
+            notes=form.notes.data,
+        )
+        flash(f"Suggested item '{form.name.data}' added successfully.", "success")
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f"{field}: {error}", "error")
+
+    return redirect(url_for("organizer.manage_potluck", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/potluck/suggested/<int:item_id>/edit", methods=["GET", "POST"])
+@login_required
+@event_admin_required
+def edit_suggested_item(event_uuid, item_id):
+    """Edit a suggested potluck item."""
+    event = g.current_event
+    item = PotluckItem.query.get_or_404(item_id)
+
+    # Verify item belongs to this event and is a suggested item
+    if item.event_id != event.id or not item.is_suggested:
+        flash("Item not found.", "error")
+        return redirect(url_for("organizer.manage_potluck", event_uuid=event_uuid))
+
+    form = SuggestedPotluckItemForm(obj=item)
+
+    if form.validate_on_submit():
+        PotluckService.update_suggested_item(
+            item,
+            name=form.name.data,
+            category=form.category.data,
+            notes=form.notes.data,
+        )
+        flash(f"Suggested item '{form.name.data}' updated successfully.", "success")
+        return redirect(url_for("organizer.manage_potluck", event_uuid=event_uuid))
+
+    return render_template(
+        "organizer/edit_suggested_item.html",
+        event=event,
+        item=item,
+        form=form,
+    )
+
+
+@bp.route("/event/<uuid:event_uuid>/potluck/suggested/<int:item_id>/delete", methods=["POST"])
+@login_required
+@event_admin_required
+def delete_suggested_item(event_uuid, item_id):
+    """Delete a suggested potluck item."""
+    event = g.current_event
+    item = PotluckItem.query.get_or_404(item_id)
+
+    # Verify item belongs to this event and is a suggested item
+    if item.event_id != event.id or not item.is_suggested:
+        flash("Item not found.", "error")
+        return redirect(url_for("organizer.manage_potluck", event_uuid=event_uuid))
+
+    item_name = item.name
+    PotluckService.delete_suggested_item(item)
+    flash(f"Suggested item '{item_name}' deleted successfully.", "success")
+
+    return redirect(url_for("organizer.manage_potluck", event_uuid=event_uuid))
 

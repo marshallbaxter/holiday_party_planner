@@ -683,3 +683,260 @@ def test_rsvp_form_no_contact_inputs_when_all_have_info(app, sample_event, sampl
     assert "Add email to receive updates" not in html_content
     assert "Add phone number" not in html_content
 
+
+# =============================================================================
+# Phone Number Formatting Tests
+# =============================================================================
+
+class TestPhoneUtils:
+    """Tests for phone number formatting utilities."""
+
+    def test_format_phone_e164_standard_us_10_digit(self):
+        """Test formatting standard 10-digit US phone numbers."""
+        from app.utils.phone_utils import format_phone_e164
+
+        # Various formats that should all normalize to the same E.164
+        test_cases = [
+            ("5551234567", "+15551234567"),
+            ("555-123-4567", "+15551234567"),
+            ("555.123.4567", "+15551234567"),
+            ("(555) 123-4567", "+15551234567"),
+            ("555 123 4567", "+15551234567"),
+        ]
+
+        for input_phone, expected in test_cases:
+            result = format_phone_e164(input_phone)
+            assert result == expected, f"Expected {expected} for input {input_phone}, got {result}"
+
+    def test_format_phone_e164_with_country_code(self):
+        """Test formatting phone numbers that already include country code."""
+        from app.utils.phone_utils import format_phone_e164
+
+        test_cases = [
+            ("+15551234567", "+15551234567"),  # Already E.164
+            ("+1 555 123 4567", "+15551234567"),  # E.164 with spaces
+            ("1-555-123-4567", "+15551234567"),  # With 1 prefix
+            ("15551234567", "+15551234567"),  # 11 digits starting with 1
+        ]
+
+        for input_phone, expected in test_cases:
+            result = format_phone_e164(input_phone)
+            assert result == expected, f"Expected {expected} for input {input_phone}, got {result}"
+
+    def test_format_phone_e164_invalid_returns_none(self):
+        """Test that invalid phone numbers return None."""
+        from app.utils.phone_utils import format_phone_e164
+
+        invalid_cases = [
+            "",  # Empty
+            "12345",  # Too short
+            "abc",  # Non-numeric
+            "555-123",  # Incomplete
+        ]
+
+        for input_phone in invalid_cases:
+            result = format_phone_e164(input_phone)
+            assert result is None, f"Expected None for invalid input {input_phone}, got {result}"
+
+    def test_format_phone_e164_none_input(self):
+        """Test that None input returns None."""
+        from app.utils.phone_utils import format_phone_e164
+
+        assert format_phone_e164(None) is None
+
+    def test_format_phone_display_from_e164(self):
+        """Test converting E.164 format to display format."""
+        from app.utils.phone_utils import format_phone_display
+
+        test_cases = [
+            ("+15551234567", "(555) 123-4567"),
+            ("+12025551234", "(202) 555-1234"),
+            ("+12078919514", "(207) 891-9514"),
+        ]
+
+        for input_phone, expected in test_cases:
+            result = format_phone_display(input_phone)
+            assert result == expected, f"Expected {expected} for input {input_phone}, got {result}"
+
+    def test_format_phone_display_from_raw(self):
+        """Test converting raw phone formats to display format."""
+        from app.utils.phone_utils import format_phone_display
+
+        # Should normalize first, then format for display
+        test_cases = [
+            ("5551234567", "(555) 123-4567"),
+            ("555-123-4567", "(555) 123-4567"),
+            ("(555) 123-4567", "(555) 123-4567"),
+        ]
+
+        for input_phone, expected in test_cases:
+            result = format_phone_display(input_phone)
+            assert result == expected, f"Expected {expected} for input {input_phone}, got {result}"
+
+    def test_format_phone_display_empty_or_none(self):
+        """Test display format with empty or None input."""
+        from app.utils.phone_utils import format_phone_display
+
+        assert format_phone_display(None) == ""
+        assert format_phone_display("") == ""
+
+    def test_format_phone_display_invalid_passthrough(self):
+        """Test that invalid phone numbers pass through as-is for display."""
+        from app.utils.phone_utils import format_phone_display
+
+        # Invalid numbers should be returned as-is
+        assert format_phone_display("12345") == "12345"
+
+    def test_is_valid_phone(self):
+        """Test phone number validation."""
+        from app.utils.phone_utils import is_valid_phone
+
+        valid_cases = [
+            "5551234567",
+            "(555) 123-4567",
+            "+15551234567",
+            "1-555-123-4567",
+        ]
+
+        for phone in valid_cases:
+            assert is_valid_phone(phone) is True, f"Expected {phone} to be valid"
+
+        invalid_cases = [
+            "",
+            "12345",
+            "abc",
+            None,
+        ]
+
+        for phone in invalid_cases:
+            assert is_valid_phone(phone) is False, f"Expected {phone} to be invalid"
+
+    def test_normalize_phone_alias(self):
+        """Test that normalize_phone is an alias for format_phone_e164."""
+        from app.utils.phone_utils import format_phone_e164, normalize_phone
+
+        test_phone = "(555) 123-4567"
+        assert normalize_phone(test_phone) == format_phone_e164(test_phone)
+
+
+class TestPersonPhoneNormalization:
+    """Tests for automatic phone normalization on Person model."""
+
+    def test_person_phone_normalized_on_create(self, app):
+        """Test that phone numbers are normalized when creating a Person."""
+        from app import db
+        from app.models import Person
+
+        person = Person(
+            first_name="Test",
+            last_name="Phone",
+            email="test.phone@example.com",
+            phone="(555) 987-6543",  # Input format
+            role="adult"
+        )
+        db.session.add(person)
+        db.session.commit()
+
+        # Phone should be normalized to E.164
+        assert person.phone == "+15559876543"
+
+    def test_person_phone_normalized_on_update(self, app):
+        """Test that phone numbers are normalized when updating a Person."""
+        from app import db
+        from app.models import Person
+
+        person = Person(
+            first_name="Test",
+            last_name="Update",
+            email="test.update@example.com",
+            phone="+15551112222",
+            role="adult"
+        )
+        db.session.add(person)
+        db.session.commit()
+
+        # Update phone with different format
+        person.phone = "555-333-4444"
+        db.session.commit()
+
+        # Phone should be normalized
+        assert person.phone == "+15553334444"
+
+    def test_person_phone_display_property(self, app):
+        """Test the phone_display property returns user-friendly format."""
+        from app import db
+        from app.models import Person
+
+        person = Person(
+            first_name="Test",
+            last_name="Display",
+            email="test.display@example.com",
+            phone="+15551234567",
+            role="adult"
+        )
+        db.session.add(person)
+        db.session.commit()
+
+        assert person.phone_display == "(555) 123-4567"
+
+    def test_person_phone_display_empty_when_no_phone(self, app):
+        """Test phone_display returns empty string when no phone."""
+        from app import db
+        from app.models import Person
+
+        person = Person(
+            first_name="Test",
+            last_name="NoPhone",
+            email="test.nophone@example.com",
+            role="adult"
+        )
+        db.session.add(person)
+        db.session.commit()
+
+        assert person.phone_display == ""
+
+    def test_person_invalid_phone_kept_as_is(self, app):
+        """Test that invalid phone numbers are kept as-is (not normalized)."""
+        from app import db
+        from app.models import Person
+
+        person = Person(
+            first_name="Test",
+            last_name="Invalid",
+            email="test.invalid@example.com",
+            phone="12345",  # Too short to normalize
+            role="adult"
+        )
+        db.session.add(person)
+        db.session.commit()
+
+        # Invalid phone should remain as-is
+        assert person.phone == "12345"
+
+
+class TestPhoneTemplateFilter:
+    """Tests for the phone Jinja2 template filter."""
+
+    def test_phone_filter_formats_e164(self, app):
+        """Test the phone template filter with E.164 input."""
+        with app.app_context():
+            result = app.jinja_env.filters['phone']('+15551234567')
+            assert result == "(555) 123-4567"
+
+    def test_phone_filter_formats_raw(self, app):
+        """Test the phone template filter with raw input."""
+        with app.app_context():
+            result = app.jinja_env.filters['phone']('5551234567')
+            assert result == "(555) 123-4567"
+
+    def test_phone_filter_handles_none(self, app):
+        """Test the phone template filter with None input."""
+        with app.app_context():
+            result = app.jinja_env.filters['phone'](None)
+            assert result == ""
+
+    def test_phone_filter_handles_empty(self, app):
+        """Test the phone template filter with empty string."""
+        with app.app_context():
+            result = app.jinja_env.filters['phone']('')
+            assert result == ""

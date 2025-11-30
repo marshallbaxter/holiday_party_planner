@@ -1,4 +1,5 @@
 """Invitation service - business logic for sending invitations."""
+from flask import current_app
 from app import db
 from app.models import EventInvitation, Household
 from app.services.notification_service import NotificationService
@@ -60,8 +61,68 @@ class InvitationService:
         return invitations
 
     @staticmethod
-    def send_invitation(invitation):
-        """Send invitation emails to all household members with email addresses.
+    def send_invitation(invitation, channels=None):
+        """Send invitation to all household members via their preferred channels.
+
+        Args:
+            invitation: EventInvitation object
+            channels: List of channels to use ('email', 'sms', or both).
+                     If None, uses each person's preferred_contact_method.
+
+        Returns:
+            Boolean indicating if at least one notification was sent successfully
+        """
+        household = invitation.household
+        email_success = 0
+        sms_success = 0
+
+        # Get all active household members
+        members = household.active_members
+
+        for member in members:
+            # Determine which channels to use for this member
+            use_email = False
+            use_sms = False
+
+            if channels:
+                # Explicit channels specified
+                use_email = 'email' in channels and member.email
+                use_sms = 'sms' in channels and member.can_receive_sms
+            else:
+                # Use member's preferences
+                use_email = member.can_receive_email
+                use_sms = member.can_receive_sms
+
+            # Send email if applicable
+            if use_email:
+                if NotificationService.send_invitation_email(invitation, member):
+                    email_success += 1
+
+            # Send SMS if applicable and enabled
+            if use_sms and current_app.config.get("ENABLE_SMS"):
+                # Ensure short token exists for SMS URL
+                if not invitation.short_token:
+                    invitation.generate_short_token()
+                    db.session.commit()
+
+                if NotificationService.send_invitation_sms(invitation, member):
+                    sms_success += 1
+
+        # Mark invitation as sent if at least one notification was successful
+        if email_success > 0:
+            invitation.mark_as_sent()
+
+        if sms_success > 0:
+            invitation.mark_sms_as_sent()
+
+        if email_success > 0 or sms_success > 0:
+            db.session.commit()
+
+        return (email_success + sms_success) > 0
+
+    @staticmethod
+    def send_invitation_email_only(invitation):
+        """Send invitation via email only.
 
         Args:
             invitation: EventInvitation object
@@ -69,24 +130,19 @@ class InvitationService:
         Returns:
             Boolean indicating if at least one email was sent successfully
         """
-        household = invitation.household
-        contacts = household.contacts_with_email
+        return InvitationService.send_invitation(invitation, channels=['email'])
 
-        if not contacts:
-            return False
+    @staticmethod
+    def send_invitation_sms_only(invitation):
+        """Send invitation via SMS only.
 
-        # Send invitation email to all contacts via NotificationService
-        success_count = 0
-        for contact in contacts:
-            if NotificationService.send_invitation_email(invitation, contact):
-                success_count += 1
+        Args:
+            invitation: EventInvitation object
 
-        # Mark invitation as sent if at least one email was successful
-        if success_count > 0:
-            invitation.mark_as_sent()
-            db.session.commit()
-
-        return success_count > 0
+        Returns:
+            Boolean indicating if at least one SMS was sent successfully
+        """
+        return InvitationService.send_invitation(invitation, channels=['sms'])
 
     @staticmethod
     def send_invitations_bulk(event):
@@ -123,17 +179,18 @@ class InvitationService:
         return InvitationService.send_invitation(invitation)
 
     @staticmethod
-    def send_invitation_to_person(invitation, person):
-        """Send invitation email to a specific person in a household.
+    def send_invitation_to_person(invitation, person, channel=None):
+        """Send invitation to a specific person in a household.
 
         Args:
             invitation: EventInvitation object
             person: Person object to send invitation to
+            channel: 'email', 'sms', or None (uses person's preference)
 
         Returns:
-            Boolean indicating if email was sent successfully
+            Boolean indicating if notification was sent successfully
         """
-        if not person or not person.email:
+        if not person:
             return False
 
         # Verify person belongs to the invitation's household
@@ -141,10 +198,40 @@ class InvitationService:
         if person not in household.active_members:
             return False
 
-        # Send invitation email to this specific person
-        if NotificationService.send_invitation_email(invitation, person):
-            # Mark invitation as sent (tracks household-level send status)
-            invitation.mark_as_sent()
+        email_sent = False
+        sms_sent = False
+
+        # Determine which channel(s) to use
+        if channel == 'email':
+            use_email = bool(person.email)
+            use_sms = False
+        elif channel == 'sms':
+            use_email = False
+            # When explicitly requesting SMS, only require phone number
+            # (organizer is making a deliberate choice to send)
+            use_sms = bool(person.phone)
+        else:
+            # Use person's preferences (respects opt-in settings)
+            use_email = person.can_receive_email
+            use_sms = person.can_receive_sms
+
+        # Send email if applicable
+        if use_email:
+            if NotificationService.send_invitation_email(invitation, person):
+                invitation.mark_as_sent()
+                email_sent = True
+
+        # Send SMS if applicable and enabled
+        if use_sms and current_app.config.get("ENABLE_SMS"):
+            # Ensure short token exists for SMS URL
+            if not invitation.short_token:
+                invitation.generate_short_token()
+
+            if NotificationService.send_invitation_sms(invitation, person):
+                invitation.mark_sms_as_sent()
+                sms_sent = True
+
+        if email_sent or sms_sent:
             db.session.commit()
             return True
 
@@ -185,18 +272,28 @@ class InvitationService:
         invitations = event.invitations.all()
 
         total = len(invitations)
-        sent = sum(1 for inv in invitations if inv.is_sent)
-        pending = total - sent
+        email_sent = sum(1 for inv in invitations if inv.is_sent)
+        sms_sent = sum(1 for inv in invitations if inv.is_sms_sent)
+        pending = total - email_sent
 
         # Count households without email
         no_email = sum(1 for inv in invitations if not inv.household.contacts_with_email)
 
+        # Count households with SMS-capable contacts
+        sms_capable = sum(
+            1 for inv in invitations
+            if any(m.can_receive_sms for m in inv.household.active_members)
+        )
+
         return {
             "total": total,
-            "sent": sent,
+            "sent": email_sent,  # Backwards compatible
+            "email_sent": email_sent,
+            "sms_sent": sms_sent,
             "pending": pending,
             "no_email": no_email,
-            "can_send": pending - no_email
+            "can_send": pending - no_email,
+            "sms_capable": sms_capable,
         }
 
     @staticmethod

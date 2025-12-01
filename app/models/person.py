@@ -118,6 +118,21 @@ class Person(db.Model):
             # (allows storing numbers that may be valid but not US format)
         return self.phone
 
+    def normalize_optional_fields(self):
+        """Convert empty strings to None for optional fields.
+
+        This is called automatically before insert/update via SQLAlchemy event.
+        Ensures that optional fields with UNIQUE constraints (like email) don't
+        fail when multiple records have empty values.
+        """
+        # Convert empty strings to None for optional fields
+        if self.last_name is not None and self.last_name.strip() == '':
+            self.last_name = None
+        if self.email is not None and self.email.strip() == '':
+            self.email = None
+        if self.phone is not None and self.phone.strip() == '':
+            self.phone = None
+
     def get_rsvp_for_event(self, event_id):
         """Get RSVP for a specific event."""
         return self.rsvps.filter_by(event_id=event_id).first()
@@ -277,14 +292,16 @@ class Person(db.Model):
         }
 
 
-# SQLAlchemy event listeners to normalize phone number before insert/update
+# SQLAlchemy event listeners to normalize fields before insert/update
 @event.listens_for(Person, "before_insert")
-def normalize_phone_before_insert(mapper, connection, target):
-    """Normalize phone number to E.164 format before inserting."""
+def normalize_fields_before_insert(mapper, connection, target):
+    """Normalize phone number and convert empty strings to None before inserting."""
     target.normalize_phone()
+    target.normalize_optional_fields()
 
 
 @event.listens_for(Person, "before_update")
-def normalize_phone_before_update(mapper, connection, target):
-    """Normalize phone number to E.164 format before updating."""
+def normalize_fields_before_update(mapper, connection, target):
+    """Normalize phone number and convert empty strings to None before updating."""
     target.normalize_phone()
+    target.normalize_optional_fields()

@@ -13,7 +13,7 @@ class Person(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     first_name = db.Column(db.String(100), nullable=False)
-    last_name = db.Column(db.String(100), nullable=False)
+    last_name = db.Column(db.String(100), nullable=True)  # Optional - some guests may only have first name
     email = db.Column(db.String(255), unique=True, nullable=True, index=True)
     phone = db.Column(db.String(20), nullable=True)
     password_hash = db.Column(db.String(255), nullable=True)  # For organizer login
@@ -64,7 +64,9 @@ class Person(db.Model):
     @property
     def full_name(self):
         """Return full name."""
-        return f"{self.first_name} {self.last_name}"
+        if self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        return self.first_name
 
     @property
     def is_adult(self):

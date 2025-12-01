@@ -59,10 +59,7 @@ def create_admin():
         print("❌ First name is required.")
         return
 
-    last_name = input("Last name: ").strip()
-    if not last_name:
-        print("❌ Last name is required.")
-        return
+    last_name = input("Last name (optional): ").strip() or None
 
     email = input("Email address: ").strip().lower()
     if not email:
@@ -98,11 +95,12 @@ def create_admin():
         break
 
     # Create household
+    default_household_name = f"{last_name} Family" if last_name else f"{first_name}'s Household"
     household_name = input(
-        f"\nHousehold name (default: {last_name} Family): "
+        f"\nHousehold name (default: {default_household_name}): "
     ).strip()
     if not household_name:
-        household_name = f"{last_name} Family"
+        household_name = default_household_name
 
     try:
         # Create person

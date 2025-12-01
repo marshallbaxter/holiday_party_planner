@@ -42,10 +42,10 @@ class PersonForm(FlaskForm):
     last_name = StringField(
         'Last Name',
         validators=[
-            DataRequired(message="Last name is required"),
-            Length(min=1, max=100, message="Last name must be between 1 and 100 characters")
+            Optional(),
+            Length(max=100, message="Last name must be at most 100 characters")
         ],
-        render_kw={"placeholder": "Smith"}
+        render_kw={"placeholder": "Smith (optional)"}
     )
     
     email = EmailField(

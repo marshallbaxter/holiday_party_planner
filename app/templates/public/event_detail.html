@@ -299,7 +299,7 @@
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                                 <input type="hidden" name="token" value="{{ user_rsvp_data.token }}"/>
                                                 <button type="submit" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium">
-                                                    Unclaim
+                                                    Can't Bring
                                                 </button>
                                             </form>
                                         </div>
@@ -709,7 +709,7 @@ async function removeDietaryTag(tagName, personId) {
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold text-gray-900" id="claimModalTitle">Claim Item</h3>
+                <h3 class="text-lg font-semibold text-gray-900" id="claimModalTitle">Bring Item</h3>
                 <button type="button" onclick="closeClaimModal()" class="text-gray-400 hover:text-gray-600">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -751,7 +751,7 @@ async function removeDietaryTag(tagName, personId) {
                     </button>
                     <button type="submit"
                             class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
-                        Claim Item
+                        I'll Bring This
                     </button>
                 </div>
             </form>
@@ -764,7 +764,7 @@ async function removeDietaryTag(tagName, personId) {
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold text-gray-900" id="editClaimModalTitle">Edit Claim Details</h3>
+                <h3 class="text-lg font-semibold text-gray-900" id="editClaimModalTitle">Edit Details</h3>
                 <button type="button" onclick="closeEditClaimModal()" class="text-gray-400 hover:text-gray-600">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -821,7 +821,7 @@ let editClaimDietaryTags = [];
 
 function openClaimModal(itemId, itemName) {
     claimDietaryTags = [];
-    document.getElementById('claimModalTitle').textContent = `Claim: ${itemName}`;
+    document.getElementById('claimModalTitle').textContent = `Bring: ${itemName}`;
     document.getElementById('claimForm').action = `{{ url_for('public.claim_suggested_item', event_uuid=event.uuid, item_id=0) }}`.replace('/0/', `/${itemId}/`);
     document.getElementById('claimer_notes').value = '';
     document.getElementById('claimer_dietary_tags').value = '[]';

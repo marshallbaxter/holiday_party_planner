@@ -268,11 +268,16 @@
                 <h3 class="text-lg font-medium text-gray-800 mb-3">{{ category_names.get(category, category|title) }}</h3>
                 <div class="space-y-3">
                     {% for item in items %}
-                    <div class="p-4 bg-gray-50 rounded-lg border {% if item.claimed_by %}border-green-200 bg-green-50{% else %}border-gray-200{% endif %}">
+                    {% set all_claims = item.get_all_claims() %}
+                    {% set user_claim = item.get_claim_by_person(current_person_id) if current_person_id else None %}
+                    <div class="p-4 bg-gray-50 rounded-lg border {% if all_claims %}border-green-200 bg-green-50{% else %}border-gray-200{% endif %}">
                         <div class="flex items-start justify-between">
                             <div class="flex-1">
                                 <div class="flex items-center gap-2">
                                     <span class="font-medium text-gray-900">{{ item.name }}</span>
+                                    {% if all_claims %}
+                                    <span class="text-xs text-green-600">({{ all_claims|length }} bringing)</span>
+                                    {% endif %}
                                 </div>
                                 {% if item.notes %}
                                     <p class="text-sm text-gray-600 mt-1 italic">Host notes: {{ item.notes }}</p>
@@ -280,10 +285,12 @@
                             </div>
                             <div class="ml-4 flex-shrink-0">
                                 {% if user_rsvp_data %}
-                                    {% if item.claimed_by_person_id == current_person_id %}
+                                    {% if user_claim %}
                                         <!-- User claimed this item - show edit and unclaim buttons -->
+                                        {% set claim_notes = user_claim.notes if user_claim is mapping else user_claim.notes %}
+                                        {% set claim_tags = user_claim.dietary_tags if user_claim is mapping else user_claim.get_dietary_tags_list() %}
                                         <div class="flex gap-2">
-                                            <button type="button" onclick="openEditClaimModal({{ item.id }}, '{{ item.name|e }}', '{{ item.claimer_notes|default('', true)|e }}', {{ item.get_claimer_dietary_tags_list()|tojson }})"
+                                            <button type="button" onclick="openEditClaimModal({{ item.id }}, '{{ item.name|e }}', '{{ claim_notes|default('', true)|e }}', {{ (claim_tags or [])|tojson }})"
                                                     class="px-3 py-1.5 text-indigo-600 hover:text-indigo-800 text-sm font-medium">
                                                 Edit
                                             </button>
@@ -296,43 +303,47 @@
                                                 </button>
                                             </form>
                                         </div>
-                                    {% elif not item.claimed_by %}
-                                        <!-- Item is unclaimed - show claim button that opens modal -->
+                                    {% else %}
+                                        <!-- User hasn't claimed - show claim button (always available for suggested items) -->
                                         <button type="button" onclick="openClaimModal({{ item.id }}, '{{ item.name|e }}')"
                                                 class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium">
                                             I'll Bring This
                                         </button>
-                                    {% else %}
-                                        <!-- Item is claimed by someone else -->
-                                        <span class="text-gray-400 text-sm">Claimed</span>
                                     {% endif %}
                                 {% else %}
-                                    {% if item.claimed_by %}
-                                        <span class="text-green-600 text-sm">✓ Claimed</span>
+                                    {% if all_claims %}
+                                        <span class="text-green-600 text-sm">✓ {{ all_claims|length }} bringing</span>
                                     {% else %}
                                         <span class="text-yellow-600 text-sm">Needed</span>
                                     {% endif %}
                                 {% endif %}
                             </div>
                         </div>
-                        <!-- Claim details section -->
-                        {% if item.claimed_by %}
-                        <div class="mt-3 pt-3 border-t border-green-200">
-                            <div class="flex items-center gap-2 text-sm text-green-800">
-                                <span class="font-medium">✓ {{ item.claimed_by.full_name }}</span>
-                                {% if item.claimer_notes %}
-                                    <span class="text-green-700">— {{ item.claimer_notes }}</span>
+                        <!-- Claim details section - show all claimers -->
+                        {% if all_claims %}
+                        <div class="mt-3 pt-3 border-t border-green-200 space-y-2">
+                            {% for claim in all_claims %}
+                            {% set claim_person = claim.person if claim is mapping else claim.person %}
+                            {% set claim_notes = claim.notes if claim is mapping else claim.notes %}
+                            {% set claim_tags = claim.dietary_tags if claim is mapping else claim.get_dietary_tags_list() %}
+                            <div class="{% if current_person_id and claim_person.id == current_person_id %}bg-green-100 p-2 rounded{% endif %}">
+                                <div class="flex items-center gap-2 text-sm text-green-800">
+                                    <span class="font-medium">✓ {{ claim_person.full_name }}{% if current_person_id and claim_person.id == current_person_id %} (you){% endif %}</span>
+                                    {% if claim_notes %}
+                                        <span class="text-green-700">— {{ claim_notes }}</span>
+                                    {% endif %}
+                                </div>
+                                {% if claim_tags %}
+                                <div class="flex flex-wrap gap-1 mt-1">
+                                    {% for tag in claim_tags %}
+                                    <span class="inline-block px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">
+                                        {{ tag }}
+                                    </span>
+                                    {% endfor %}
+                                </div>
                                 {% endif %}
                             </div>
-                            {% if item.get_claimer_dietary_tags_list() %}
-                            <div class="flex flex-wrap gap-1 mt-2">
-                                {% for tag in item.get_claimer_dietary_tags_list() %}
-                                <span class="inline-block px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">
-                                    {{ tag }}
-                                </span>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
+                            {% endfor %}
                         </div>
                         {% endif %}
                     </div>

@@ -86,25 +86,35 @@ class PotluckItem(db.Model):
     def is_claimed(self):
         """Check if item has been claimed.
 
-        For suggested items, check claimed_by_person_id.
-        For freeform items, check claims relationship.
+        For both suggested and freeform items, check claims relationship.
+        Legacy: Also checks claimed_by_person_id for backward compatibility.
         """
-        if self.is_suggested:
-            return self.claimed_by_person_id is not None
-        return self.claims.count() > 0
+        if self.claims.count() > 0:
+            return True
+        # Legacy fallback for suggested items
+        if self.is_suggested and self.claimed_by_person_id is not None:
+            return True
+        return False
 
     @property
     def claim_count(self):
         """Get number of claims for this item."""
-        if self.is_suggested:
-            return 1 if self.claimed_by_person_id else 0
-        return self.claims.count()
+        count = self.claims.count()
+        # Legacy fallback: count old single-claim field if no new claims exist
+        if count == 0 and self.is_suggested and self.claimed_by_person_id:
+            return 1
+        return count
 
     @property
     def is_fully_claimed(self):
-        """Check if item has been fully claimed."""
+        """Check if item has been fully claimed.
+
+        For suggested items, there's no limit - always allow more claims.
+        For freeform items, check against quantity_needed.
+        """
         if self.is_suggested:
-            return self.claimed_by_person_id is not None
+            # Suggested items can always accept more claims
+            return False
         if not self.quantity_needed:
             return self.is_claimed
         return self.claim_count >= self.quantity_needed
@@ -112,6 +122,9 @@ class PotluckItem(db.Model):
     @property
     def remaining_quantity(self):
         """Get remaining quantity needed."""
+        if self.is_suggested:
+            # Suggested items have unlimited claims
+            return 1  # Always allow claiming
         if not self.quantity_needed:
             return 0 if self.is_claimed else 1
         return max(0, self.quantity_needed - self.claim_count)
@@ -123,10 +136,110 @@ class PotluckItem(db.Model):
         return self.dietary_tags if isinstance(self.dietary_tags, list) else []
 
     def get_claimer_dietary_tags_list(self):
-        """Get claimer dietary tags as a list (for suggested items)."""
+        """Get claimer dietary tags as a list (for suggested items).
+
+        DEPRECATED: Use get_all_claims() to get individual claim dietary tags.
+        Returns first claim's dietary tags for backward compatibility.
+        """
+        # First try new claims system
+        first_claim = self.claims.first()
+        if first_claim and first_claim.dietary_tags:
+            return first_claim.get_dietary_tags_list()
+        # Legacy fallback
         if not self.claimer_dietary_tags:
             return []
         return self.claimer_dietary_tags if isinstance(self.claimer_dietary_tags, list) else []
+
+    def get_all_claims(self):
+        """Get all claims for this item as a list.
+
+        For suggested items with legacy data, includes the old claimed_by_person_id as a claim.
+        Returns list of PotluckClaim objects (or dict for legacy data).
+        """
+        claims_list = list(self.claims.all())
+
+        # Include legacy claim if it exists and no new claims reference it
+        if self.is_suggested and self.claimed_by_person_id:
+            legacy_person_ids = [c.person_id for c in claims_list]
+            if self.claimed_by_person_id not in legacy_person_ids:
+                # Return a dict that mimics PotluckClaim for the legacy claim
+                from app.models import Person
+                legacy_person = Person.query.get(self.claimed_by_person_id)
+                if legacy_person:
+                    claims_list.insert(0, {
+                        'person': legacy_person,
+                        'person_id': self.claimed_by_person_id,
+                        'notes': self.claimer_notes,
+                        'dietary_tags': self.claimer_dietary_tags or [],
+                        'claimed_at': self.claimed_at,
+                        'is_legacy': True
+                    })
+
+        return claims_list
+
+    def get_claimers_display(self):
+        """Get formatted string of claimer names.
+
+        Returns:
+            String like "John Doe", "John and Jane Doe", or "John, Jane, and Tommy Doe"
+        """
+        claims = self.get_all_claims()
+        if not claims:
+            return None
+
+        names = []
+        for claim in claims:
+            if isinstance(claim, dict):
+                # Legacy claim
+                names.append(claim['person'].full_name)
+            else:
+                # PotluckClaim object
+                names.append(claim.person.full_name)
+
+        if len(names) == 1:
+            return names[0]
+        elif len(names) == 2:
+            return f"{names[0]} and {names[1]}"
+        else:
+            return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+    def has_claim_by_person(self, person_id):
+        """Check if a specific person has claimed this item."""
+        if person_id is None:
+            return False
+        # Check new claims
+        if self.claims.filter_by(person_id=person_id).first():
+            return True
+        # Check legacy claim
+        if self.is_suggested and self.claimed_by_person_id == person_id:
+            return True
+        return False
+
+    def get_claim_by_person(self, person_id):
+        """Get the claim for a specific person, or None if not claimed.
+
+        Returns PotluckClaim object or dict (for legacy claims).
+        """
+        if person_id is None:
+            return None
+        # Check new claims first
+        claim = self.claims.filter_by(person_id=person_id).first()
+        if claim:
+            return claim
+        # Check legacy claim
+        if self.is_suggested and self.claimed_by_person_id == person_id:
+            from app.models import Person
+            legacy_person = Person.query.get(self.claimed_by_person_id)
+            if legacy_person:
+                return {
+                    'person': legacy_person,
+                    'person_id': self.claimed_by_person_id,
+                    'notes': self.claimer_notes,
+                    'dietary_tags': self.claimer_dietary_tags or [],
+                    'claimed_at': self.claimed_at,
+                    'is_legacy': True
+                }
+        return None
 
     @property
     def contributors(self):
@@ -231,7 +344,10 @@ class PotluckItem(db.Model):
 
 
 class PotluckClaim(db.Model):
-    """Represents a claim on a potluck item by a person/household."""
+    """Represents a claim on a potluck item by a person/household.
+
+    Used for both freeform items (multiple claims) and suggested items (multiple claims).
+    """
 
     __tablename__ = "potluck_claims"
 
@@ -245,6 +361,7 @@ class PotluckClaim(db.Model):
     )
     claimed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     notes = db.Column(db.Text, nullable=True)
+    dietary_tags = db.Column(db.JSON, nullable=True)  # Array of dietary tags for this claim
 
     # Relationships
     item = db.relationship("PotluckItem", back_populates="claims")
@@ -262,6 +379,12 @@ class PotluckClaim(db.Model):
     def __repr__(self):
         return f"<PotluckClaim item_id={self.potluck_item_id} person_id={self.person_id}>"
 
+    def get_dietary_tags_list(self):
+        """Get dietary tags as a list."""
+        if not self.dietary_tags:
+            return []
+        return self.dietary_tags if isinstance(self.dietary_tags, list) else []
+
     def to_dict(self):
         """Convert potluck claim to dictionary."""
         return {
@@ -271,6 +394,7 @@ class PotluckClaim(db.Model):
             "household_id": self.household_id,
             "claimed_at": self.claimed_at.isoformat() if self.claimed_at else None,
             "notes": self.notes,
+            "dietary_tags": self.get_dietary_tags_list(),
             "person_name": self.person.full_name if self.person else None,
         }
 

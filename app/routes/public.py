@@ -832,7 +832,10 @@ def post_message(event_uuid):
 
 @bp.route("/event/<uuid:event_uuid>/potluck/suggested/<int:item_id>/claim", methods=["POST"])
 def claim_suggested_item(event_uuid, item_id):
-    """Claim a suggested potluck item with optional notes and dietary tags."""
+    """Claim a suggested potluck item with optional notes and dietary tags.
+
+    Supports multiple claims per item - each person can claim the same item.
+    """
     event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
     item = PotluckItem.query.get_or_404(item_id)
 
@@ -862,9 +865,9 @@ def claim_suggested_item(event_uuid, item_id):
         flash("Please log in or use your invitation link to claim items.", "error")
         return redirect(url_for("public.event_detail", event_uuid=event_uuid))
 
-    # Check if item is already claimed
-    if item.claimed_by_person_id is not None:
-        flash("This item has already been claimed.", "info")
+    # Check if person has already claimed this item
+    if item.has_claim_by_person(person.id):
+        flash("You've already claimed this item.", "info")
     else:
         # Get optional notes and dietary tags from form
         claimer_notes = request.form.get("claimer_notes", "").strip() or None
@@ -895,7 +898,7 @@ def claim_suggested_item(event_uuid, item_id):
 
 @bp.route("/event/<uuid:event_uuid>/potluck/suggested/<int:item_id>/unclaim", methods=["POST"])
 def unclaim_suggested_item(event_uuid, item_id):
-    """Unclaim a suggested potluck item."""
+    """Unclaim a suggested potluck item (only removes the current user's claim)."""
     event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
     item = PotluckItem.query.get_or_404(item_id)
 
@@ -926,7 +929,7 @@ def unclaim_suggested_item(event_uuid, item_id):
         return redirect(url_for("public.event_detail", event_uuid=event_uuid))
 
     # Check if item is claimed by this person
-    if item.claimed_by_person_id != person.id:
+    if not item.has_claim_by_person(person.id):
         flash("You can only unclaim items you've claimed.", "error")
     else:
         result = PotluckService.unclaim_suggested_item(item, person)
@@ -975,7 +978,7 @@ def edit_claim_details(event_uuid, item_id):
         return redirect(url_for("public.event_detail", event_uuid=event_uuid))
 
     # Check if item is claimed by this person
-    if item.claimed_by_person_id != person.id:
+    if not item.has_claim_by_person(person.id):
         flash("You can only edit items you've claimed.", "error")
     else:
         # Get notes and dietary tags from form

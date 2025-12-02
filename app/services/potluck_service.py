@@ -294,7 +294,7 @@ class PotluckService:
 
     @staticmethod
     def claim_suggested_item(item, person, claimer_notes=None, claimer_dietary_tags=None):
-        """Claim a suggested potluck item.
+        """Claim a suggested potluck item (supports multiple claims per item).
 
         Args:
             item: PotluckItem object (must be a suggested item)
@@ -303,23 +303,40 @@ class PotluckService:
             claimer_dietary_tags: Optional list of dietary tags for the item
 
         Returns:
-            Updated PotluckItem object or None if already claimed
+            PotluckClaim object or None if person already claimed this item
         """
         if not item.is_suggested:
             raise ValueError("Cannot use this method on non-suggested items")
 
-        # Check if item is already claimed
-        if item.claimed_by_person_id is not None:
-            return None
+        # Check if person has already claimed this item
+        existing_claim = PotluckClaim.query.filter_by(
+            potluck_item_id=item.id,
+            person_id=person.id
+        ).first()
 
-        item.claimed_by_person_id = person.id
-        item.claimed_at = datetime.utcnow()
-        item.claimer_notes = claimer_notes
-        item.claimer_dietary_tags = claimer_dietary_tags if claimer_dietary_tags else None
+        if existing_claim:
+            return None  # Already claimed by this person
 
+        # Also check legacy claim field
+        if item.claimed_by_person_id == person.id:
+            return None  # Already claimed via legacy field
+
+        # Get household for the person
+        household = person.primary_household
+
+        # Create new claim
+        claim = PotluckClaim(
+            potluck_item_id=item.id,
+            person_id=person.id,
+            household_id=household.id if household else None,
+            notes=claimer_notes,
+            dietary_tags=claimer_dietary_tags if claimer_dietary_tags else None
+        )
+
+        db.session.add(claim)
         db.session.commit()
 
-        return item
+        return claim
 
     @staticmethod
     def update_claim_details(item, person, claimer_notes=None, claimer_dietary_tags=None):
@@ -332,21 +349,33 @@ class PotluckService:
             claimer_dietary_tags: List of dietary tags for the item
 
         Returns:
-            Updated PotluckItem object or None if not claimed by this person
+            PotluckClaim object or None if not claimed by this person
         """
         if not item.is_suggested:
             raise ValueError("Cannot use this method on non-suggested items")
 
-        # Check if item is claimed by this person
-        if item.claimed_by_person_id != person.id:
-            return None
+        # First try to find a PotluckClaim record
+        claim = PotluckClaim.query.filter_by(
+            potluck_item_id=item.id,
+            person_id=person.id
+        ).first()
 
-        item.claimer_notes = claimer_notes
-        item.claimer_dietary_tags = claimer_dietary_tags if claimer_dietary_tags else None
+        if claim:
+            # Update the claim
+            claim.notes = claimer_notes
+            claim.dietary_tags = claimer_dietary_tags if claimer_dietary_tags else None
+            db.session.commit()
+            return claim
 
-        db.session.commit()
+        # Check legacy claim field
+        if item.claimed_by_person_id == person.id:
+            # Update legacy fields (for backward compatibility)
+            item.claimer_notes = claimer_notes
+            item.claimer_dietary_tags = claimer_dietary_tags if claimer_dietary_tags else None
+            db.session.commit()
+            return item
 
-        return item
+        return None  # Not claimed by this person
 
     @staticmethod
     def unclaim_suggested_item(item, person):
@@ -357,23 +386,32 @@ class PotluckService:
             person: Person object unclaiming the item
 
         Returns:
-            Updated PotluckItem object or None if not claimed by this person
+            True if successfully unclaimed, False if not claimed by this person
         """
         if not item.is_suggested:
             raise ValueError("Cannot use this method on non-suggested items")
 
-        # Check if item is claimed by this person
-        if item.claimed_by_person_id != person.id:
-            return None
+        # First try to find and delete a PotluckClaim record
+        claim = PotluckClaim.query.filter_by(
+            potluck_item_id=item.id,
+            person_id=person.id
+        ).first()
 
-        item.claimed_by_person_id = None
-        item.claimed_at = None
-        item.claimer_notes = None
-        item.claimer_dietary_tags = None
+        if claim:
+            db.session.delete(claim)
+            db.session.commit()
+            return True
 
-        db.session.commit()
+        # Check legacy claim field
+        if item.claimed_by_person_id == person.id:
+            item.claimed_by_person_id = None
+            item.claimed_at = None
+            item.claimer_notes = None
+            item.claimer_dietary_tags = None
+            db.session.commit()
+            return True
 
-        return item
+        return False  # Not claimed by this person
 
     @staticmethod
     def get_suggested_items(event):

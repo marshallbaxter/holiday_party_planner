@@ -252,7 +252,11 @@ def event_detail(event_uuid):
         }
 
     # Get current person ID for template
+    # First check session (logged in user)
     current_person_id = session.get("person_id")
+    # If not logged in but accessing via token, use the first household member
+    if not current_person_id and household and household.active_members:
+        current_person_id = household.active_members[0].id
 
     # Category display names for suggested items
     category_names = {

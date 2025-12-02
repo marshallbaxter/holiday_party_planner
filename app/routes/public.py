@@ -854,12 +854,15 @@ def claim_suggested_item(event_uuid, item_id):
 
     # Check token (guest with invitation)
     if not person and token:
-        invitation = EventInvitation.verify_token(token)
-        if invitation and invitation.event_id == event.id:
-            # Get the first person from the household
-            household = invitation.household
-            if household and household.active_members:
-                person = household.active_members[0]
+        token_data = EventInvitation.verify_token(token)
+        if token_data and token_data.get("event_id") == event.id:
+            # Get the invitation and household
+            invitation = EventInvitation.query.filter_by(
+                event_id=token_data["event_id"],
+                household_id=token_data["household_id"]
+            ).first()
+            if invitation and invitation.household and invitation.household.active_members:
+                person = invitation.household.active_members[0]
 
     if not person:
         flash("Please log in or use your invitation link to claim items.", "error")
@@ -917,12 +920,15 @@ def unclaim_suggested_item(event_uuid, item_id):
 
     # Check token (guest with invitation)
     if not person and token:
-        invitation = EventInvitation.verify_token(token)
-        if invitation and invitation.event_id == event.id:
-            # Get the first person from the household
-            household = invitation.household
-            if household and household.active_members:
-                person = household.active_members[0]
+        token_data = EventInvitation.verify_token(token)
+        if token_data and token_data.get("event_id") == event.id:
+            # Get the invitation and household
+            invitation = EventInvitation.query.filter_by(
+                event_id=token_data["event_id"],
+                household_id=token_data["household_id"]
+            ).first()
+            if invitation and invitation.household and invitation.household.active_members:
+                person = invitation.household.active_members[0]
 
     if not person:
         flash("Please log in or use your invitation link to unclaim items.", "error")
@@ -966,12 +972,15 @@ def edit_claim_details(event_uuid, item_id):
 
     # Check token (guest with invitation)
     if not person and token:
-        invitation = EventInvitation.verify_token(token)
-        if invitation and invitation.event_id == event.id:
-            # Get the first person from the household
-            household = invitation.household
-            if household and household.active_members:
-                person = household.active_members[0]
+        token_data = EventInvitation.verify_token(token)
+        if token_data and token_data.get("event_id") == event.id:
+            # Get the invitation and household
+            invitation = EventInvitation.query.filter_by(
+                event_id=token_data["event_id"],
+                household_id=token_data["household_id"]
+            ).first()
+            if invitation and invitation.household and invitation.household.active_members:
+                person = invitation.household.active_members[0]
 
     if not person:
         flash("Please log in or use your invitation link to edit items.", "error")

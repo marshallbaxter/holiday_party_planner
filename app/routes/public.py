@@ -892,9 +892,9 @@ def claim_suggested_item(event_uuid, item_id):
             claimer_dietary_tags=claimer_dietary_tags
         )
         if result:
-            flash(f"You've claimed '{item.name}'!", "success")
+            flash(f"You're bringing '{item.name}'!", "success")
         else:
-            flash("Unable to claim this item.", "error")
+            flash("Unable to add this item.", "error")
 
     # Redirect back with token if present
     if token:
@@ -940,13 +940,13 @@ def unclaim_suggested_item(event_uuid, item_id):
 
     # Check if item is claimed by this person
     if not item.has_claim_by_person(person.id):
-        flash("You can only unclaim items you've claimed.", "error")
+        flash("You can only remove items you're bringing.", "error")
     else:
         result = PotluckService.unclaim_suggested_item(item, person)
         if result:
-            flash(f"You've unclaimed '{item.name}'.", "success")
+            flash(f"You're no longer bringing '{item.name}'.", "success")
         else:
-            flash("Unable to unclaim this item.", "error")
+            flash("Unable to remove this item.", "error")
 
     # Redirect back with token if present
     if token:
@@ -992,7 +992,7 @@ def edit_claim_details(event_uuid, item_id):
 
     # Check if item is claimed by this person
     if not item.has_claim_by_person(person.id):
-        flash("You can only edit items you've claimed.", "error")
+        flash("You can only edit items you're bringing.", "error")
     else:
         # Get notes and dietary tags from form
         claimer_notes = request.form.get("claimer_notes", "").strip() or None

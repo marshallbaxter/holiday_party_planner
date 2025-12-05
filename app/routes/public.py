@@ -1,10 +1,11 @@
 """Public routes - for guests and event viewing."""
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from app import db
-from app.models import Event, EventInvitation, RSVP, PotluckItem, MessageWallPost, Person, EventAdmin
+from app.models import Event, EventInvitation, RSVP, PotluckItem, MessageWallPost, Person, EventAdmin, GuestReferral
 from app.utils.decorators import valid_rsvp_token_required
 from app.services.rsvp_service import RSVPService
 from app.services.potluck_service import PotluckService
+from app.services.bring_friend_service import BringFriendService
 from app.forms.potluck_forms import PotluckItemForm, ClaimSuggestedItemForm
 from collections import defaultdict
 import json
@@ -150,9 +151,9 @@ def event_detail(event_uuid):
     suggested_items = PotluckService.get_suggested_items(event)
     suggested_items_by_category = PotluckService.get_suggested_items_by_category(event)
 
-    # Get message wall posts
+    # Get message wall posts (oldest first for conversation flow)
     message_posts = event.message_posts.order_by(
-        MessageWallPost.posted_at.desc()
+        MessageWallPost.posted_at.asc()
     ).all()
 
     # Check for user authentication and RSVP status
@@ -229,6 +230,25 @@ def event_detail(event_uuid):
                         'no_response': sum(1 for r in rsvps if r.status == 'no_response'),
                     }
 
+    # Method 3: Check if accessing via friend referral token (brought friend)
+    friend_referral = None
+    friend_person = None
+    friend_rsvp = None
+    if not household:
+        token = request.args.get("token")
+        if token:
+            # Try to verify as a friend referral token
+            token_data = GuestReferral.verify_token(token)
+            if token_data and token_data.get("event_id") == event.id:
+                friend_referral = GuestReferral.query.get(token_data.get("referral_id"))
+                if friend_referral:
+                    friend_person = friend_referral.referred
+                    friend_rsvp = RSVP.query.filter_by(
+                        event_id=event.id,
+                        person_id=friend_person.id
+                    ).first()
+                    rsvp_token = token
+
     # Prepare user RSVP data if authenticated and invited
     if household and invitation:
         # Check for missing contact info in household members
@@ -249,14 +269,61 @@ def event_detail(event_uuid):
             'token': rsvp_token,
             'members_missing_email': members_missing_email,
             'members_missing_phone': members_missing_phone,
+            'is_brought_friend': False,
         }
 
-    # Get current person ID for template
-    # First check session (logged in user)
+    # Build user_rsvp_data for brought friends
+    elif friend_referral and friend_person:
+        user_rsvp_data = {
+            'household': None,
+            'invitation': None,
+            'rsvps': [friend_rsvp] if friend_rsvp else [],
+            'summary': None,
+            'token': rsvp_token,
+            'members_missing_email': [],
+            'members_missing_phone': [],
+            'is_brought_friend': True,
+            'referral': friend_referral,
+            'referrer': friend_referral.referrer,
+            'person': friend_person,
+            'rsvp': friend_rsvp,
+        }
+
+    # Get current person for template (for message posting attribution)
+    # Priority: 1) Logged in user, 2) Person-specific invite link, 3) First household member, 4) Brought friend
+    current_person = None
     current_person_id = session.get("person_id")
-    # If not logged in but accessing via token, use the first household member
-    if not current_person_id and household and household.active_members:
-        current_person_id = household.active_members[0].id
+    if current_person_id:
+        current_person = Person.query.get(current_person_id)
+
+    # Check if accessed via person-specific invitation link
+    if not current_person:
+        invited_person_id = session.get("invited_person_id")
+        if invited_person_id and household:
+            # Verify the person is in this household
+            invited_person = Person.query.get(invited_person_id)
+            if invited_person and invited_person in household.active_members:
+                current_person = invited_person
+                current_person_id = invited_person_id
+
+    # Fall back to first household member
+    if not current_person and household and household.active_members:
+        current_person = household.active_members[0]
+        current_person_id = current_person.id
+
+    # Fall back to brought friend person
+    if not current_person and friend_person:
+        current_person = friend_person
+        current_person_id = friend_person.id
+
+    # Check if current person is an event admin (for organizer badge on messages)
+    is_event_admin = False
+    if current_person:
+        is_event_admin = EventAdmin.query.filter_by(
+            event_id=event.id,
+            person_id=current_person.id,
+            removed_at=None
+        ).first() is not None
 
     # Category display names for suggested items
     category_names = {
@@ -266,6 +333,43 @@ def event_detail(event_uuid):
         "drink": "🥤 Beverages",
         "other": "📦 Other",
     }
+
+    # Get brought friends for this event
+    brought_friends = BringFriendService.get_friends_for_event(event)
+
+    # Get all attending guests for the "Who's Coming" section
+    # Group by household for regular invitations, separate section for brought friends
+    attending_rsvps = RSVP.query.filter_by(
+        event_id=event.id,
+        status="attending"
+    ).all()
+
+    # Organize attending guests by household
+    attending_by_household = {}
+    attending_friends = []
+
+    for rsvp in attending_rsvps:
+        if rsvp.household_id:
+            # Regular invitation - group by household
+            if rsvp.household_id not in attending_by_household:
+                attending_by_household[rsvp.household_id] = {
+                    "household": rsvp.household,
+                    "members": []
+                }
+            attending_by_household[rsvp.household_id]["members"].append(rsvp.person)
+        else:
+            # Brought friend - no household
+            # Find who invited them
+            referral = GuestReferral.query.filter_by(
+                event_id=event.id,
+                referred_person_id=rsvp.person_id
+            ).first()
+            attending_friends.append({
+                "person": rsvp.person,
+                "referrer": referral.referrer if referral else None
+            })
+
+    attending_households = list(attending_by_household.values())
 
     return render_template(
         "public/event_detail.html",
@@ -279,6 +383,11 @@ def event_detail(event_uuid):
         message_posts=message_posts,
         user_rsvp_data=user_rsvp_data,
         current_person_id=current_person_id,
+        current_person=current_person,
+        is_event_admin=is_event_admin,
+        brought_friends=brought_friends,
+        attending_households=attending_households,
+        attending_friends=attending_friends,
     )
 
 
@@ -824,11 +933,78 @@ def post_message(event_uuid):
     """Post a message to the event wall."""
     event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
     household = request.household  # Set by decorator
+    token = request.args.get("token")
 
-    # TODO: Implement message posting
-    flash("Message posting not yet implemented", "info")
+    # Get the message content
+    message_text = request.form.get("message", "").strip()
 
-    return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+    if not message_text:
+        flash("Please enter a message.", "warning")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    # Limit message length (prevent abuse)
+    max_length = 2000
+    if len(message_text) > max_length:
+        flash(f"Message is too long. Please keep it under {max_length} characters.", "warning")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    # Determine the posting person
+    # Priority: 1) Logged in user, 2) Person-specific invite link, 3) Form-provided person_id
+    person = None
+    person_id = session.get("person_id")
+    if person_id:
+        person = Person.query.get(person_id)
+
+    # Check if accessed via person-specific invitation link
+    if not person:
+        invited_person_id = session.get("invited_person_id")
+        if invited_person_id:
+            invited_person = Person.query.get(invited_person_id)
+            if invited_person and invited_person in household.active_members:
+                person = invited_person
+
+    # Fall back to form-provided person_id (validated against household)
+    if not person:
+        form_person_id = request.form.get("person_id")
+        if form_person_id:
+            try:
+                form_person = Person.query.get(int(form_person_id))
+                if form_person and form_person in household.active_members:
+                    person = form_person
+            except (ValueError, TypeError):
+                pass
+
+    # Last resort: first household member
+    if not person and household.active_members:
+        person = household.active_members[0]
+
+    if not person:
+        flash("Unable to determine who is posting. Please try again.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    # Check if the person is an event admin (for organizer badge)
+    is_organizer = EventAdmin.query.filter_by(
+        event_id=event.id,
+        person_id=person.id,
+        removed_at=None
+    ).first() is not None
+
+    # Create the message post
+    try:
+        message_post = MessageWallPost(
+            event_id=event.id,
+            person_id=person.id,
+            message=message_text,
+            is_organizer_post=is_organizer
+        )
+        db.session.add(message_post)
+        db.session.commit()
+        flash("Your message has been posted!", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash("An error occurred while posting your message. Please try again.", "error")
+
+    return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
 
 
 # ==================== Suggested Potluck Item Claim Routes ====================
@@ -1019,3 +1195,266 @@ def edit_claim_details(event_uuid, item_id):
         return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
     else:
         return redirect(url_for("public.event_detail", event_uuid=event_uuid))
+
+
+# ==================== Bring a Friend Routes ====================
+
+
+@bp.route("/f/<short_token>")
+def friend_short_redirect(short_token):
+    """Redirect from friend-specific short URL to event detail page.
+
+    This route handles friend invitation links for "bring a friend" feature.
+    """
+    referral = GuestReferral.get_by_short_token(short_token)
+
+    if not referral:
+        flash("Invalid or expired invitation link.", "error")
+        return redirect(url_for("public.index"))
+
+    # Ensure the referral has a full token
+    if not referral.invitation_token:
+        referral.generate_token()
+        db.session.commit()
+
+    # Store the referred person_id in session for personalization
+    session["invited_person_id"] = referral.referred_person_id
+    session["is_brought_friend"] = True
+
+    # Redirect to main event detail page with friend token
+    return redirect(url_for(
+        "public.event_detail",
+        event_uuid=referral.event.uuid,
+        token=referral.invitation_token,
+    ))
+
+
+@bp.route("/event/<uuid:event_uuid>/friend")
+def event_detail_friend(event_uuid):
+    """Legacy route - redirects to main event detail page.
+
+    This route is kept for backward compatibility with existing email links.
+    New links should use the main event_detail route with friend token.
+    """
+    token = request.args.get("token")
+    return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+
+@bp.route("/event/<uuid:event_uuid>/bring-friend", methods=["GET", "POST"])
+@valid_rsvp_token_required
+def bring_friend_form(event_uuid):
+    """Form to invite a friend to an event."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    household = request.household  # Set by decorator
+    token = request.args.get("token")
+
+    # Get the current person (the one inviting the friend)
+    current_person = None
+    person_id = session.get("person_id")
+    if person_id:
+        current_person = Person.query.get(person_id)
+
+    # Check if accessed via person-specific invitation link
+    if not current_person:
+        invited_person_id = session.get("invited_person_id")
+        if invited_person_id and household:
+            invited_person = Person.query.get(invited_person_id)
+            if invited_person and invited_person in household.active_members:
+                current_person = invited_person
+
+    # Fall back to first household member
+    if not current_person and household and household.active_members:
+        current_person = household.active_members[0]
+
+    if not current_person:
+        flash("Unable to determine who is inviting the friend.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    # Check if person can invite friends
+    if not BringFriendService.can_person_invite_friends(event, current_person):
+        flash("You must be invited to this event to bring a friend.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    if request.method == "POST":
+        # Get form data
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip() or None
+        email = request.form.get("email", "").strip() or None
+        phone = request.form.get("phone", "").strip() or None
+
+        # Validate required fields
+        if not first_name:
+            flash("Friend's first name is required.", "error")
+            return render_template(
+                "public/bring_friend_form.html",
+                event=event,
+                token=token,
+                current_person=current_person,
+            )
+
+        try:
+            # Create the friend invitation
+            result = BringFriendService.invite_friend(
+                event=event,
+                referrer_person=current_person,
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                phone=phone,
+            )
+
+            # Redirect to confirmation page with short link
+            referral = result["referral"]
+            return redirect(url_for(
+                "public.bring_friend_confirmation",
+                event_uuid=event_uuid,
+                referral_id=referral.id,
+                token=token
+            ))
+
+        except ValueError as e:
+            flash(str(e), "error")
+        except Exception as e:
+            db.session.rollback()
+            flash("An error occurred while inviting your friend. Please try again.", "error")
+
+    # Get friends already invited by this person
+    friends_invited = BringFriendService.get_friends_invited_by_person(event, current_person)
+
+    return render_template(
+        "public/bring_friend_form.html",
+        event=event,
+        token=token,
+        current_person=current_person,
+        friends_invited=friends_invited,
+    )
+
+
+@bp.route("/event/<uuid:event_uuid>/bring-friend/confirmation")
+@valid_rsvp_token_required
+def bring_friend_confirmation(event_uuid):
+    """Confirmation page after inviting a friend."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    token = request.args.get("token")
+    referral_id = request.args.get("referral_id")
+
+    if not referral_id:
+        flash("Invalid request.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    # Get the referral
+    referral = GuestReferral.query.get(referral_id)
+    if not referral or referral.event_id != event.id:
+        flash("Invalid invitation reference.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    # Construct the short link
+    short_link = url_for("public.friend_short_redirect", short_token=referral.short_token, _external=True)
+
+    return render_template(
+        "public/bring_friend_confirmation.html",
+        event=event,
+        token=token,
+        friend=referral.referred,
+        referral=referral,
+        short_link=short_link,
+    )
+
+
+@bp.route("/event/<uuid:event_uuid>/bring-friend/<int:referral_id>/resend-email", methods=["POST"])
+@valid_rsvp_token_required
+def resend_friend_invitation_email(event_uuid, referral_id):
+    """Resend invitation email to a brought friend."""
+    from app.services.notification_service import NotificationService
+
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    token = request.args.get("token") or request.form.get("token")
+
+    # Get the referral
+    referral = GuestReferral.query.get(referral_id)
+    if not referral or referral.event_id != event.id:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return {"success": False, "message": "Invalid referral."}, 400
+        flash("Invalid referral.", "error")
+        return redirect(url_for("public.bring_friend_form", event_uuid=event_uuid, token=token))
+
+    # Check if friend has email
+    friend = referral.referred
+    if not friend.email:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return {"success": False, "message": "This friend does not have an email address."}, 400
+        flash("This friend does not have an email address.", "error")
+        return redirect(url_for("public.bring_friend_form", event_uuid=event_uuid, token=token))
+
+    # Send the email
+    try:
+        success = NotificationService.send_friend_invitation_email(referral, friend)
+        if success:
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return {"success": True, "message": f"Invitation email sent to {friend.email}"}
+            flash(f"Invitation email sent to {friend.email}", "success")
+        else:
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return {"success": False, "message": "Failed to send email. Please try again."}, 500
+            flash("Failed to send email. Please try again.", "error")
+    except Exception as e:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return {"success": False, "message": "An error occurred while sending the email."}, 500
+        flash("An error occurred while sending the email.", "error")
+
+    return redirect(url_for("public.bring_friend_form", event_uuid=event_uuid, token=token))
+
+
+@bp.route("/event/<uuid:event_uuid>/friend/rsvp", methods=["POST"])
+def submit_friend_rsvp(event_uuid):
+    """Submit RSVP for a brought friend."""
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+    token = request.args.get("token") or request.form.get("token")
+
+    if not token:
+        flash("Invalid request.", "error")
+        return redirect(url_for("public.index"))
+
+    # Verify friend token
+    token_data = GuestReferral.verify_token(token)
+    if not token_data or token_data.get("event_id") != event.id:
+        flash("Invalid or expired invitation link.", "error")
+        return redirect(url_for("public.index"))
+
+    # Get the referral and person
+    referral = GuestReferral.query.get(token_data.get("referral_id"))
+    if not referral:
+        flash("Invalid invitation link.", "error")
+        return redirect(url_for("public.index"))
+
+    referred_person = referral.referred
+
+    # Get the RSVP
+    rsvp = RSVP.query.filter_by(
+        event_id=event.id,
+        person_id=referred_person.id
+    ).first()
+
+    if not rsvp:
+        flash("RSVP not found.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    # Get form data
+    status = request.form.get("status", "").strip()
+    notes = request.form.get("notes", "").strip() or None
+
+    # Validate status
+    valid_statuses = ["attending", "not_attending", "maybe", "no_response"]
+    if status not in valid_statuses:
+        flash("Invalid RSVP status.", "error")
+        return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))
+
+    # Update the RSVP
+    try:
+        RSVPService.update_rsvp(rsvp, status, notes)
+        flash("Your RSVP has been recorded. Thank you!", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash("An error occurred while submitting your RSVP. Please try again.", "error")
+
+    return redirect(url_for("public.event_detail", event_uuid=event_uuid, token=token))

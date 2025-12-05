@@ -1,6 +1,6 @@
 """Tests for database models."""
 import pytest
-from app.models import Person, Household, Event, RSVP, EventInvitation
+from app.models import Person, Household, Event, RSVP, EventInvitation, GuestReferral
 
 
 def test_person_creation(sample_person):
@@ -940,3 +940,546 @@ class TestPhoneTemplateFilter:
         with app.app_context():
             result = app.jinja_env.filters['phone']('')
             assert result == ""
+
+
+# =============================================================================
+# Bring a Friend / GuestReferral Tests
+# =============================================================================
+
+class TestGuestReferralModel:
+    """Tests for the GuestReferral model."""
+
+    def test_guest_referral_creation(self, app, sample_event, sample_person):
+        """Test creating a GuestReferral record."""
+        from app import db
+
+        # Create a friend (person without household)
+        friend = Person(
+            first_name="Friend",
+            last_name="Person",
+            email="friend@example.com",
+            role="adult"
+        )
+        db.session.add(friend)
+        db.session.commit()
+
+        # Create referral
+        referral = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral)
+        db.session.commit()
+
+        assert referral.id is not None
+        assert referral.event_id == sample_event.id
+        assert referral.referrer_person_id == sample_person.id
+        assert referral.referred_person_id == friend.id
+        assert referral.created_at is not None
+
+    def test_guest_referral_relationships(self, app, sample_event, sample_person):
+        """Test GuestReferral relationships to Event, referrer, and referred."""
+        from app import db
+
+        friend = Person(
+            first_name="Friend",
+            last_name="Test",
+            email="friend.test@example.com",
+            role="adult"
+        )
+        db.session.add(friend)
+        db.session.commit()
+
+        referral = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral)
+        db.session.commit()
+
+        # Test relationships
+        assert referral.event == sample_event
+        assert referral.referrer == sample_person
+        assert referral.referred == friend
+
+    def test_guest_referral_token_generation(self, app, sample_event, sample_person):
+        """Test generating invitation token for guest referral."""
+        from app import db
+
+        friend = Person(first_name="TokenFriend", role="adult")
+        db.session.add(friend)
+        db.session.commit()
+
+        referral = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral)
+        db.session.commit()
+
+        # Generate token
+        token = referral.generate_token()
+
+        assert token is not None
+        assert referral.invitation_token == token
+        assert referral.token_expires_at is not None
+
+    def test_guest_referral_token_verification(self, app, sample_event, sample_person):
+        """Test verifying a guest referral token."""
+        from app import db
+
+        friend = Person(first_name="VerifyFriend", role="adult")
+        db.session.add(friend)
+        db.session.commit()
+
+        referral = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral)
+        db.session.commit()
+
+        token = referral.generate_token()
+
+        # Verify the token
+        token_data = GuestReferral.verify_token(token)
+
+        assert token_data is not None
+        assert token_data["event_id"] == sample_event.id
+        assert token_data["referred_person_id"] == friend.id
+        assert token_data["referral_id"] == referral.id
+        assert token_data["type"] == "guest_referral"
+
+    def test_guest_referral_invalid_token_returns_none(self, app):
+        """Test that invalid tokens return None."""
+        token_data = GuestReferral.verify_token("invalid_token_12345")
+        assert token_data is None
+
+    def test_guest_referral_short_token_generation(self, app, sample_event, sample_person):
+        """Test generating short token for SMS-friendly URLs."""
+        from app import db
+
+        friend = Person(first_name="ShortTokenFriend", role="adult")
+        db.session.add(friend)
+        db.session.commit()
+
+        referral = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral)
+        db.session.commit()
+
+        short_token = referral.generate_short_token()
+
+        assert short_token is not None
+        # Short tokens are 12 chars or less (URL-safe base64 can vary slightly)
+        assert len(short_token) <= 12
+        assert len(short_token) >= 8  # At minimum
+        assert referral.short_token == short_token
+
+    def test_guest_referral_get_by_short_token(self, app, sample_event, sample_person):
+        """Test retrieving a GuestReferral by short token."""
+        from app import db
+
+        friend = Person(first_name="GetByTokenFriend", role="adult")
+        db.session.add(friend)
+        db.session.commit()
+
+        referral = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral)
+        db.session.commit()
+
+        short_token = referral.generate_short_token()
+        db.session.commit()
+
+        # Retrieve by short token
+        found_referral = GuestReferral.get_by_short_token(short_token)
+
+        assert found_referral is not None
+        assert found_referral.id == referral.id
+
+    def test_guest_referral_unique_constraint(self, app, sample_event, sample_person):
+        """Test that a person can only be referred once per event."""
+        from app import db
+        from sqlalchemy.exc import IntegrityError
+
+        friend = Person(first_name="UniqueFriend", role="adult")
+        db.session.add(friend)
+        db.session.commit()
+
+        # First referral should succeed
+        referral1 = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral1)
+        db.session.commit()
+
+        # Second referral to same event should fail
+        referral2 = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral2)
+
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+
+    def test_guest_referral_to_dict(self, app, sample_event, sample_person):
+        """Test the to_dict method."""
+        from app import db
+
+        friend = Person(first_name="DictFriend", role="adult")
+        db.session.add(friend)
+        db.session.commit()
+
+        referral = GuestReferral(
+            event_id=sample_event.id,
+            referrer_person_id=sample_person.id,
+            referred_person_id=friend.id
+        )
+        db.session.add(referral)
+        db.session.commit()
+
+        data = referral.to_dict()
+
+        assert data["id"] == referral.id
+        assert data["event_id"] == sample_event.id
+        assert data["referrer_person_id"] == sample_person.id
+        assert data["referred_person_id"] == friend.id
+        assert data["created_at"] is not None
+
+
+class TestBringFriendService:
+    """Tests for the BringFriendService."""
+
+    def test_create_friend_minimal(self, app):
+        """Test creating a friend with only first name."""
+        from app.services.bring_friend_service import BringFriendService
+        from app import db
+
+        person = BringFriendService.create_friend("JustFirstName")
+        db.session.commit()
+
+        assert person.id is not None
+        assert person.first_name == "JustFirstName"
+        assert person.last_name is None
+        assert person.email is None
+        assert person.phone is None
+        assert person.role == "adult"
+
+    def test_create_friend_full_info(self, app):
+        """Test creating a friend with all information."""
+        from app.services.bring_friend_service import BringFriendService
+        from app import db
+
+        person = BringFriendService.create_friend(
+            first_name="Full",
+            last_name="Info",
+            email="full.info@example.com",
+            phone="555-123-4567"
+        )
+        db.session.commit()
+
+        assert person.first_name == "Full"
+        assert person.last_name == "Info"
+        assert person.email == "full.info@example.com"
+        # Phone should be normalized
+        assert person.phone is not None
+
+    def test_invite_friend_complete_flow(self, app, sample_event, sample_person, sample_household, sample_invitation):
+        """Test the complete flow of inviting a friend."""
+        from app.services.bring_friend_service import BringFriendService
+        from app.services.rsvp_service import RSVPService
+        from app import db
+
+        # Create RSVP for the referrer first
+        RSVPService.create_rsvps_for_household(sample_event, sample_household)
+
+        result = BringFriendService.invite_friend(
+            event=sample_event,
+            referrer_person=sample_person,
+            first_name="Invited",
+            last_name="Friend",
+            email="invited.friend@example.com"
+        )
+
+        assert result["person"] is not None
+        assert result["referral"] is not None
+        assert result["rsvp"] is not None
+
+        # Verify the person was created
+        assert result["person"].first_name == "Invited"
+        assert result["person"].last_name == "Friend"
+
+        # Verify the referral was created with tokens
+        assert result["referral"].invitation_token is not None
+        assert result["referral"].short_token is not None
+        assert result["referral"].referrer_person_id == sample_person.id
+
+        # Verify the RSVP was created without household
+        assert result["rsvp"].household_id is None
+        assert result["rsvp"].status == "no_response"
+
+    def test_invite_friend_duplicate_email_same_event(self, app, sample_event, sample_person, sample_household, sample_invitation):
+        """Test that inviting someone already invited raises an error."""
+        from app.services.bring_friend_service import BringFriendService
+        from app.services.rsvp_service import RSVPService
+
+        # Create RSVP for referrer
+        RSVPService.create_rsvps_for_household(sample_event, sample_household)
+
+        # First invitation should succeed
+        BringFriendService.invite_friend(
+            event=sample_event,
+            referrer_person=sample_person,
+            first_name="First",
+            last_name="Invite",
+            email="duplicate@example.com"
+        )
+
+        # Second invitation with same email should fail
+        with pytest.raises(ValueError, match="already invited"):
+            BringFriendService.invite_friend(
+                event=sample_event,
+                referrer_person=sample_person,
+                first_name="Second",
+                last_name="Invite",
+                email="duplicate@example.com"
+            )
+
+    def test_get_friends_for_event(self, app, sample_event, sample_person, sample_household, sample_invitation):
+        """Test retrieving all friends for an event."""
+        from app.services.bring_friend_service import BringFriendService
+        from app.services.rsvp_service import RSVPService
+
+        RSVPService.create_rsvps_for_household(sample_event, sample_household)
+
+        # Invite two friends
+        BringFriendService.invite_friend(
+            sample_event, sample_person, "Friend", "One", "friend1@example.com"
+        )
+        BringFriendService.invite_friend(
+            sample_event, sample_person, "Friend", "Two", "friend2@example.com"
+        )
+
+        friends = BringFriendService.get_friends_for_event(sample_event)
+
+        assert len(friends) == 2
+        assert all(f["person"] is not None for f in friends)
+        assert all(f["referrer"] == sample_person for f in friends)
+        assert all(f["rsvp"] is not None for f in friends)
+
+    def test_get_friends_invited_by_person(self, app, sample_event, sample_person, sample_household, sample_invitation):
+        """Test getting friends invited by a specific person."""
+        from app.services.bring_friend_service import BringFriendService
+        from app.services.rsvp_service import RSVPService
+        from app import db
+
+        RSVPService.create_rsvps_for_household(sample_event, sample_household)
+
+        # Create second referrer
+        referrer2 = Person(
+            first_name="Second",
+            last_name="Referrer",
+            email="referrer2@example.com",
+            role="adult"
+        )
+        db.session.add(referrer2)
+        db.session.commit()
+
+        # Create RSVP for second referrer (as a brought friend)
+        rsvp2 = RSVP(
+            event_id=sample_event.id,
+            person_id=referrer2.id,
+            household_id=None,
+            status="attending"
+        )
+        db.session.add(rsvp2)
+        db.session.commit()
+
+        # Each referrer invites one friend
+        BringFriendService.invite_friend(
+            sample_event, sample_person, "Friend", "OfFirst"
+        )
+        BringFriendService.invite_friend(
+            sample_event, referrer2, "Friend", "OfSecond"
+        )
+
+        # Get friends invited by first person
+        friends_of_first = BringFriendService.get_friends_invited_by_person(
+            sample_event, sample_person
+        )
+        assert len(friends_of_first) == 1
+        assert friends_of_first[0].referred.last_name == "OfFirst"
+
+        # Get friends invited by second person
+        friends_of_second = BringFriendService.get_friends_invited_by_person(
+            sample_event, referrer2
+        )
+        assert len(friends_of_second) == 1
+        assert friends_of_second[0].referred.last_name == "OfSecond"
+
+    def test_can_person_invite_friends_with_rsvp(self, app, sample_event, sample_person, sample_household, sample_invitation):
+        """Test that a person with an RSVP can invite friends."""
+        from app.services.bring_friend_service import BringFriendService
+        from app.services.rsvp_service import RSVPService
+
+        RSVPService.create_rsvps_for_household(sample_event, sample_household)
+
+        can_invite = BringFriendService.can_person_invite_friends(
+            sample_event, sample_person
+        )
+        assert can_invite is True
+
+    def test_can_person_invite_friends_without_rsvp(self, app, sample_event):
+        """Test that a person without an RSVP cannot invite friends."""
+        from app.services.bring_friend_service import BringFriendService
+        from app import db
+
+        # Create a person who is not invited
+        outsider = Person(
+            first_name="Not",
+            last_name="Invited",
+            email="outsider@example.com",
+            role="adult"
+        )
+        db.session.add(outsider)
+        db.session.commit()
+
+        can_invite = BringFriendService.can_person_invite_friends(
+            sample_event, outsider
+        )
+        assert can_invite is False
+
+    def test_get_referral_by_token(self, app, sample_event, sample_person, sample_household, sample_invitation):
+        """Test retrieving a referral by its long token."""
+        from app.services.bring_friend_service import BringFriendService
+        from app.services.rsvp_service import RSVPService
+
+        RSVPService.create_rsvps_for_household(sample_event, sample_household)
+
+        result = BringFriendService.invite_friend(
+            sample_event, sample_person, "Token", "Test"
+        )
+
+        token = result["referral"].invitation_token
+        found_referral = BringFriendService.get_referral_by_token(token)
+
+        assert found_referral is not None
+        assert found_referral.id == result["referral"].id
+
+    def test_get_referral_by_short_token(self, app, sample_event, sample_person, sample_household, sample_invitation):
+        """Test retrieving a referral by its short token."""
+        from app.services.bring_friend_service import BringFriendService
+        from app.services.rsvp_service import RSVPService
+
+        RSVPService.create_rsvps_for_household(sample_event, sample_household)
+
+        result = BringFriendService.invite_friend(
+            sample_event, sample_person, "Short", "Token"
+        )
+
+        short_token = result["referral"].short_token
+        found_referral = BringFriendService.get_referral_by_short_token(short_token)
+
+        assert found_referral is not None
+        assert found_referral.id == result["referral"].id
+
+    def test_remove_friend(self, app, sample_event, sample_person, sample_household, sample_invitation):
+        """Test removing a brought friend."""
+        from app.services.bring_friend_service import BringFriendService
+        from app.services.rsvp_service import RSVPService
+
+        RSVPService.create_rsvps_for_household(sample_event, sample_household)
+
+        result = BringFriendService.invite_friend(
+            sample_event, sample_person, "ToRemove", "Friend"
+        )
+
+        friend_person_id = result["person"].id
+        referral = result["referral"]
+
+        # Remove the friend
+        success = BringFriendService.remove_friend(referral)
+        assert success is True
+
+        # Verify referral is gone
+        assert GuestReferral.query.get(referral.id) is None
+
+        # Verify RSVP is gone
+        rsvp = RSVP.query.filter_by(
+            event_id=sample_event.id,
+            person_id=friend_person_id
+        ).first()
+        assert rsvp is None
+
+        # Person should still exist
+        assert Person.query.get(friend_person_id) is not None
+
+
+class TestRSVPForBroughtFriend:
+    """Tests for RSVP functionality with brought friends."""
+
+    def test_rsvp_without_household(self, app, sample_event):
+        """Test that RSVPs can be created without a household for brought friends."""
+        from app import db
+
+        friend = Person(first_name="NoHousehold", role="adult")
+        db.session.add(friend)
+        db.session.commit()
+
+        rsvp = RSVP(
+            event_id=sample_event.id,
+            person_id=friend.id,
+            household_id=None,  # No household
+            status="attending"
+        )
+        db.session.add(rsvp)
+        db.session.commit()
+
+        assert rsvp.id is not None
+        assert rsvp.household_id is None
+        assert rsvp.is_attending is True
+
+    def test_rsvp_is_brought_friend_property(self, app, sample_event, sample_person, sample_household):
+        """Test the is_brought_friend property on RSVP."""
+        from app import db
+
+        # Regular RSVP with household
+        regular_rsvp = RSVP(
+            event_id=sample_event.id,
+            person_id=sample_person.id,
+            household_id=sample_household.id,
+            status="attending"
+        )
+        db.session.add(regular_rsvp)
+
+        # Friend RSVP without household
+        friend = Person(first_name="FriendProp", role="adult")
+        db.session.add(friend)
+        db.session.commit()
+
+        friend_rsvp = RSVP(
+            event_id=sample_event.id,
+            person_id=friend.id,
+            household_id=None,
+            status="attending"
+        )
+        db.session.add(friend_rsvp)
+        db.session.commit()
+
+        assert regular_rsvp.is_brought_friend is False
+        assert friend_rsvp.is_brought_friend is True

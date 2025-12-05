@@ -43,9 +43,9 @@
         <p>We're sorry you can't make it. Hope to see you at the next event!</p>
         {% endif %}
 
-        {% if invitation %}
+        {% if event_url %}
         <div style="text-align: center; margin: 30px 0;">
-            <a href="{{ invitation.get_event_url() }}"
+            <a href="{{ event_url }}"
                style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
                 View Event Details
             </a>

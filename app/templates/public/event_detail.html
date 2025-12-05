@@ -59,6 +59,71 @@
     
     <!-- User's RSVP Status (if authenticated and invited) -->
     {% if user_rsvp_data %}
+    {% if user_rsvp_data.is_brought_friend %}
+    <!-- Brought Friend RSVP Section -->
+    <div class="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-lg shadow-md p-6 mb-8">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <h2 class="text-2xl font-semibold text-gray-900 mb-1">Your RSVP Status</h2>
+                <p class="text-sm text-gray-600">
+                    You were invited by <strong>{{ user_rsvp_data.referrer.full_name }}</strong>
+                </p>
+            </div>
+            <div class="h-10 w-10 bg-purple-100 rounded-full flex items-center justify-center">
+                <svg class="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- RSVP Form for Brought Friend -->
+        <form method="POST" action="{{ url_for('public.submit_friend_rsvp', event_uuid=event.uuid, token=user_rsvp_data.token) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="bg-white rounded-lg p-4 mb-4">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="font-medium text-gray-900">{{ user_rsvp_data.person.full_name }}</span>
+                    {% if user_rsvp_data.rsvp and user_rsvp_data.rsvp.has_responded %}
+                    <span class="text-sm text-gray-500">Previously responded</span>
+                    {% endif %}
+                </div>
+
+                <div class="space-y-2">
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <input type="radio" name="status" value="attending" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                               {% if user_rsvp_data.rsvp and user_rsvp_data.rsvp.status == 'attending' %}checked{% endif %}>
+                        <span class="ml-3 text-gray-900">✓ Attending</span>
+                    </label>
+
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <input type="radio" name="status" value="not_attending" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                               {% if user_rsvp_data.rsvp and user_rsvp_data.rsvp.status == 'not_attending' %}checked{% endif %}>
+                        <span class="ml-3 text-gray-900">✗ Not Attending</span>
+                    </label>
+
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <input type="radio" name="status" value="maybe" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                               {% if user_rsvp_data.rsvp and user_rsvp_data.rsvp.status == 'maybe' %}checked{% endif %}>
+                        <span class="ml-3 text-gray-900">? Maybe</span>
+                    </label>
+                </div>
+
+                <div class="mt-3">
+                    <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">Notes (optional):</label>
+                    <textarea id="notes" name="notes" rows="2"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                              placeholder="Any dietary restrictions, special requests, etc.">{{ user_rsvp_data.rsvp.notes if user_rsvp_data.rsvp else '' }}</textarea>
+                </div>
+            </div>
+
+            <button type="submit"
+                    class="w-full px-6 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                Submit RSVP
+            </button>
+        </form>
+    </div>
+    {% else %}
+    <!-- Regular Household RSVP Section -->
     <div class="bg-gradient-to-r from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-lg shadow-md p-6 mb-8">
         <div class="flex items-start justify-between mb-4">
             <div>
@@ -117,10 +182,22 @@
         </div>
     </div>
     {% endif %}
+    {% endif %}
 
     <!-- RSVP Stats -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-        <h2 class="text-2xl font-semibold text-gray-900 mb-4">Who's Coming?</h2>
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-2xl font-semibold text-gray-900">Who's Coming?</h2>
+            {% if user_rsvp_data and user_rsvp_data.token and not user_rsvp_data.is_brought_friend %}
+            <a href="{{ url_for('public.bring_friend_form', event_uuid=event.uuid, token=user_rsvp_data.token) }}"
+               class="inline-flex items-center px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors">
+                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+                Bring a Friend
+            </a>
+            {% endif %}
+        </div>
         <div class="grid grid-cols-3 gap-4">
             <div class="text-center">
                 <div class="text-3xl font-bold text-green-600">{{ rsvp_stats.attending }}</div>
@@ -135,6 +212,86 @@
                 <div class="text-sm text-gray-600">Awaiting Response</div>
             </div>
         </div>
+
+        <!-- Attendee List -->
+        {% if attending_households or attending_friends %}
+        <div class="mt-6 pt-6 border-t border-gray-200">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">
+                <svg class="inline-block h-5 w-5 text-green-600 mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                Confirmed Attendees
+            </h3>
+
+            <!-- Attending from Households -->
+            {% if attending_households %}
+            <div class="flex flex-wrap gap-2 mb-4">
+                {% for group in attending_households %}
+                    {% for person in group.members %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                        {{ person.first_name }}
+                    </span>
+                    {% endfor %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Attending Friends (brought by guests) -->
+            {% if attending_friends %}
+            <div class="flex flex-wrap gap-2">
+                {% for friend in attending_friends %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+                    {{ friend.person.first_name }}
+                    {% if friend.referrer %}
+                    <span class="text-purple-600 ml-1">(via {{ friend.referrer.first_name }})</span>
+                    {% endif %}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Brought Friends Section (all statuses) -->
+        {% if brought_friends %}
+        <div class="mt-6 pt-6 border-t border-gray-200">
+            <h3 class="text-lg font-medium text-gray-900 mb-3">
+                <svg class="inline-block h-5 w-5 text-purple-600 mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+                Friends Brought by Guests
+            </h3>
+            <div class="space-y-2">
+                {% for friend_data in brought_friends %}
+                <div class="flex items-center justify-between bg-purple-50 rounded-lg p-3">
+                    <div class="flex items-center">
+                        <div class="h-8 w-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                            <svg class="h-4 w-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <span class="font-medium text-gray-900">{{ friend_data.person.first_name }}</span>
+                            <span class="text-sm text-gray-500 ml-2">(invited by {{ friend_data.referrer.first_name }})</span>
+                        </div>
+                    </div>
+                    {% if friend_data.rsvp %}
+                    <span class="px-3 py-1 rounded-full text-sm font-medium
+                        {% if friend_data.rsvp.status == 'attending' %}bg-green-100 text-green-800
+                        {% elif friend_data.rsvp.status == 'not_attending' %}bg-red-100 text-red-800
+                        {% elif friend_data.rsvp.status == 'maybe' %}bg-yellow-100 text-yellow-800
+                        {% else %}bg-gray-100 text-gray-800{% endif %}">
+                        {% if friend_data.rsvp.status == 'attending' %}✓ Attending
+                        {% elif friend_data.rsvp.status == 'not_attending' %}✗ Not Attending
+                        {% elif friend_data.rsvp.status == 'maybe' %}? Maybe
+                        {% else %}No Response{% endif %}
+                    </span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Dietary Restrictions & Preferences -->
@@ -243,6 +400,64 @@
                 </div>
             </div>
             {% endfor %}
+
+            <p class="text-sm text-gray-500 mt-2">
+                <svg class="inline h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Add allergies, dietary restrictions, or food preferences. This helps the host plan the menu.
+            </p>
+        </div>
+        {% elif user_rsvp_data and user_rsvp_data.is_brought_friend and user_rsvp_data.person %}
+        <!-- Dietary Preferences Form for Brought Friends -->
+        <div class="mt-6 pt-6 border-t border-gray-200">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Your Dietary Info</h3>
+
+            {% set friend_person = user_rsvp_data.person %}
+            <div class="mb-4 p-4 bg-purple-50 rounded-lg" id="dietary-member-{{ friend_person.id }}">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-medium text-gray-800">{{ friend_person.full_name }}</span>
+                    <span class="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Invited by {{ user_rsvp_data.referrer.first_name }}</span>
+                </div>
+
+                <!-- Current tags for this person -->
+                <div id="tags-{{ friend_person.id }}" class="flex flex-wrap gap-2 mb-3 min-h-[32px]">
+                    {% if friend_person.tags %}
+                        {% for tag in friend_person.tags %}
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                            {{ tag.name }}
+                            <button type="button"
+                                    class="ml-2 text-green-600 hover:text-green-800 focus:outline-none"
+                                    onclick="removeDietaryTag('{{ tag.name }}', {{ friend_person.id }})">
+                                ×
+                            </button>
+                        </span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="text-sm text-gray-500 no-tags-msg">No dietary restrictions added</span>
+                    {% endif %}
+                </div>
+
+                <!-- Add tag input -->
+                <div class="flex gap-2">
+                    <div class="flex-1 relative">
+                        <input type="text"
+                               id="tag-input-{{ friend_person.id }}"
+                               class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                               placeholder="Add restriction (e.g., vegetarian, nut allergy)"
+                               autocomplete="off"
+                               onkeypress="handleTagKeypress(event, {{ friend_person.id }})">
+                        <div id="tag-suggestions-{{ friend_person.id }}"
+                             class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        </div>
+                    </div>
+                    <button type="button"
+                            class="px-3 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                            onclick="addDietaryTag({{ friend_person.id }})">
+                        Add
+                    </button>
+                </div>
+            </div>
 
             <p class="text-sm text-gray-500 mt-2">
                 <svg class="inline h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -523,9 +738,61 @@
     </div>
     
     <!-- Message Wall -->
-    {% if message_posts %}
+    {% if message_posts or (user_rsvp_data and current_person) %}
     <div class="bg-white rounded-lg shadow-md p-6 mb-8">
         <h2 class="text-2xl font-semibold text-gray-900 mb-4">💬 Message Wall</h2>
+
+        <!-- Message Posting Form (only for authenticated users) -->
+        {% if user_rsvp_data and current_person %}
+        <div class="mb-6 pb-6 border-b border-gray-200">
+            <form action="{{ url_for('public.post_message', event_uuid=event.uuid, token=user_rsvp_data.token) }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="person_id" value="{{ current_person.id }}"/>
+
+                <div class="flex items-start space-x-3">
+                    <!-- Avatar placeholder -->
+                    <div class="flex-shrink-0">
+                        <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                            <span class="text-indigo-600 font-medium text-sm">
+                                {{ current_person.first_name[:1] }}{{ current_person.last_name[:1] if current_person.last_name else '' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="flex-grow">
+                        <div class="mb-2">
+                            <span class="text-sm text-gray-600">
+                                Posting as <span class="font-medium text-gray-900">{{ current_person.full_name }}</span>
+                                {% if is_event_admin %}
+                                <span class="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded ml-1">Organizer</span>
+                                {% endif %}
+                            </span>
+                        </div>
+                        <textarea
+                            name="message"
+                            rows="2"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none"
+                            placeholder="Share a message with fellow guests..."
+                            required
+                            maxlength="2000"
+                        ></textarea>
+                        <div class="mt-2 flex justify-between items-center">
+                            <span class="text-xs text-gray-400">Max 2000 characters</span>
+                            <button
+                                type="submit"
+                                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors"
+                            >
+                                Post Message
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
+        <!-- Messages List -->
+        {% if message_posts %}
         <div class="space-y-4">
             {% for post in message_posts %}
             <div class="border-l-4 {% if post.is_organizer_post %}border-indigo-500{% else %}border-gray-300{% endif %} pl-4 py-2">
@@ -538,10 +805,20 @@
                     </span>
                     <span class="text-sm text-gray-500">{{ post.posted_at|datetime('%b %d, %I:%M %p') }}</span>
                 </div>
-                <p class="text-gray-700">{{ post.message }}</p>
+                <p class="text-gray-700 whitespace-pre-wrap">{{ post.message }}</p>
             </div>
             {% endfor %}
         </div>
+        {% else %}
+        <!-- Empty State (when authenticated but no messages yet) -->
+        <div class="text-center py-8">
+            <svg class="mx-auto h-12 w-12 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+            </svg>
+            <p class="text-gray-500 font-medium">No messages yet</p>
+            <p class="text-sm text-gray-400 mt-1">Be the first to share a message with fellow guests!</p>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
     

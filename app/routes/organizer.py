@@ -10,6 +10,7 @@ from app.services.invitation_service import InvitationService
 from app.services.notification_service import NotificationService
 from app.services.rsvp_service import RSVPService
 from app.services.potluck_service import PotluckService
+from app.services.bring_friend_service import BringFriendService
 
 bp = Blueprint("organizer", __name__, url_prefix="/organizer")
 
@@ -136,12 +137,16 @@ def event_dashboard(event_uuid):
     # Get invitation statistics
     invitation_stats = InvitationService.get_invitation_stats(event)
 
+    # Get brought friends for this event
+    brought_friends = BringFriendService.get_friends_for_event(event)
+
     return render_template(
         "organizer/event_dashboard.html",
         event=event,
         rsvp_stats=rsvp_stats,
         invitations=invitations,
         invitation_stats=invitation_stats,
+        brought_friends=brought_friends,
     )
 
 

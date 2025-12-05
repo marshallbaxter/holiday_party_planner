@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}{{ event.title }} - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Event Header -->
+    <div class="bg-white rounded-lg shadow-md p-8 mb-8">
+        <h1 class="text-4xl font-bold text-gray-900 mb-4">{{ event.title }}</h1>
+        
+        <div class="space-y-3 text-gray-700">
+            <div class="flex items-start">
+                <svg class="h-6 w-6 text-indigo-600 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+                <div>
+                    <div class="font-semibold">When</div>
+                    <div>{{ event.event_date|datetime('%A, %B %d, %Y at %I:%M %p') }}</div>
+                </div>
+            </div>
+            
+            {% if event.venue_address %}
+            <div class="flex items-start">
+                <svg class="h-6 w-6 text-indigo-600 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <div>
+                    <div class="font-semibold">Where</div>
+                    <div>{{ event.venue_address }}</div>
+                    {% if event.venue_map_url %}
+                    <a href="{{ event.venue_map_url }}" target="_blank" class="text-indigo-600 hover:text-indigo-500 text-sm">
+                        View on map →
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if event.rsvp_deadline %}
+            <div class="flex items-start">
+                <svg class="h-6 w-6 text-indigo-600 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div>
+                    <div class="font-semibold">RSVP By</div>
+                    <div>{{ event.rsvp_deadline|datetime('%B %d, %Y') }}</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        
+        {% if event.description %}
+        <div class="mt-6 pt-6 border-t border-gray-200">
+            <p class="text-gray-700 whitespace-pre-line">{{ event.description }}</p>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Friend's RSVP Status -->
+    {% if user_rsvp_data %}
+    <div class="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-lg shadow-md p-6 mb-8">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <h2 class="text-2xl font-semibold text-gray-900 mb-1">Your RSVP Status</h2>
+                <p class="text-sm text-gray-600">
+                    You were invited by <strong>{{ user_rsvp_data.referrer.full_name }}</strong>
+                </p>
+            </div>
+            <div class="h-10 w-10 bg-purple-100 rounded-full flex items-center justify-center">
+                <svg class="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- RSVP Form -->
+        <form method="POST" action="{{ url_for('public.submit_friend_rsvp', event_uuid=event.uuid, token=user_rsvp_data.token) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <div class="bg-white rounded-lg p-4 mb-4">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="font-medium text-gray-900">{{ user_rsvp_data.person.full_name }}</span>
+                    {% if user_rsvp_data.rsvp and user_rsvp_data.rsvp.has_responded %}
+                    <span class="text-sm text-gray-500">Previously responded</span>
+                    {% endif %}
+                </div>
+                
+                <div class="space-y-2">
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <input type="radio" name="status" value="attending" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                               {% if user_rsvp_data.rsvp and user_rsvp_data.rsvp.status == 'attending' %}checked{% endif %}>
+                        <span class="ml-3 text-gray-900">✓ Attending</span>
+                    </label>
+                    
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <input type="radio" name="status" value="not_attending" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                               {% if user_rsvp_data.rsvp and user_rsvp_data.rsvp.status == 'not_attending' %}checked{% endif %}>
+                        <span class="ml-3 text-gray-900">✗ Not Attending</span>
+                    </label>
+                    
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <input type="radio" name="status" value="maybe" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                               {% if user_rsvp_data.rsvp and user_rsvp_data.rsvp.status == 'maybe' %}checked{% endif %}>
+                        <span class="ml-3 text-gray-900">? Maybe</span>
+                    </label>
+                </div>
+                
+                <div class="mt-3">
+                    <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">Notes (optional):</label>
+                    <textarea id="notes" name="notes" rows="2"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                              placeholder="Any dietary restrictions, special requests, etc.">{{ user_rsvp_data.rsvp.notes if user_rsvp_data.rsvp else '' }}</textarea>
+                </div>
+            </div>
+            
+            <button type="submit"
+                    class="w-full px-6 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                Submit RSVP
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- RSVP Stats -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h2 class="text-2xl font-semibold text-gray-900 mb-4">Who's Coming?</h2>
+        <div class="grid grid-cols-3 gap-4">
+            <div class="text-center">
+                <div class="text-3xl font-bold text-green-600">{{ rsvp_stats.attending }}</div>
+                <div class="text-sm text-gray-600">Attending</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-red-600">{{ rsvp_stats.not_attending }}</div>
+                <div class="text-sm text-gray-600">Not Attending</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-gray-400">{{ rsvp_stats.no_response }}</div>
+                <div class="text-sm text-gray-600">Awaiting Response</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

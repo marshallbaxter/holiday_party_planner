@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Friend Invited - {{ event.title }} - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <!-- Success Card -->
+    <div class="bg-white rounded-lg shadow-md p-8 text-center">
+        <!-- Success Icon -->
+        <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-6">
+            <svg class="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-900 mb-2">Friend Invited!</h1>
+        <p class="text-gray-600 mb-6">
+            You've successfully invited <strong class="text-gray-900">{{ friend.first_name }}{% if friend.last_name %} {{ friend.last_name }}{% endif %}</strong> to <strong class="text-gray-900">{{ event.title }}</strong>.
+        </p>
+
+        <!-- Share Link Section -->
+        <div class="bg-gray-50 rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-2">
+                <svg class="inline-block h-5 w-5 text-indigo-600 mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
+                </svg>
+                Share This Link
+            </h2>
+            <p class="text-sm text-gray-600 mb-4">
+                Share this link with {{ friend.first_name }} so they can view the event details and RSVP:
+            </p>
+
+            <!-- Link Display -->
+            <div class="flex items-center bg-white border border-gray-300 rounded-lg overflow-hidden">
+                <input type="text" 
+                       id="share-link" 
+                       readonly 
+                       value="{{ short_link }}"
+                       class="flex-1 px-4 py-3 text-gray-700 bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-mono">
+                <button onclick="copyLink()" 
+                        id="copy-btn"
+                        class="px-4 py-3 bg-indigo-600 text-white hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <svg id="copy-icon" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                    <svg id="check-icon" class="h-5 w-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </button>
+            </div>
+            <p id="copy-feedback" class="text-sm text-green-600 mt-2 hidden">Link copied to clipboard!</p>
+
+            {% if friend.email %}
+            <p class="text-sm text-gray-500 mt-4">
+                <svg class="inline-block h-4 w-4 text-green-500 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                </svg>
+                An email invitation has also been sent to {{ friend.email }}
+            </p>
+            {% else %}
+            <p class="text-sm text-amber-600 mt-4">
+                <svg class="inline-block h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                No email was provided, so please share this link directly with {{ friend.first_name }}.
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex flex-col sm:flex-row gap-3 justify-center">
+            <a href="{{ url_for('public.bring_friend_form', event_uuid=event.uuid, token=token) }}"
+               class="inline-flex items-center justify-center px-6 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+                <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+                Invite Another Friend
+            </a>
+            <a href="{{ url_for('public.event_detail', event_uuid=event.uuid, token=token) }}"
+               class="inline-flex items-center justify-center px-6 py-3 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors">
+                <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Back to Event
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyLink() {
+    const linkInput = document.getElementById('share-link');
+    const copyIcon = document.getElementById('copy-icon');
+    const checkIcon = document.getElementById('check-icon');
+    const feedback = document.getElementById('copy-feedback');
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(linkInput.value).then(function() {
+        // Show success state
+        copyIcon.classList.add('hidden');
+        checkIcon.classList.remove('hidden');
+        feedback.classList.remove('hidden');
+
+        // Reset after 2 seconds
+        setTimeout(function() {
+            copyIcon.classList.remove('hidden');
+            checkIcon.classList.add('hidden');
+            feedback.classList.add('hidden');
+        }, 2000);
+    }).catch(function(err) {
+        // Fallback for older browsers
+        linkInput.select();
+        document.execCommand('copy');
+        feedback.classList.remove('hidden');
+        setTimeout(function() {
+            feedback.classList.add('hidden');
+        }, 2000);
+    });
+}
+</script>
+{% endblock %}
+

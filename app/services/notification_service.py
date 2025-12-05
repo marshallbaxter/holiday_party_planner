@@ -1,7 +1,8 @@
 """Notification service - handles email/SMS sending via Brevo."""
-from flask import current_app, render_template
+from flask import current_app, render_template, url_for
 from app import db
 from app.models import Notification, EventInvitation
+from app.models.guest_referral import GuestReferral
 from app.utils.phone_utils import format_phone_e164
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
@@ -286,6 +287,66 @@ class NotificationService:
         )
 
     @staticmethod
+    def send_friend_invitation_email(referral, friend_person):
+        """Send invitation email to a brought friend.
+
+        Args:
+            referral: GuestReferral object containing the referral relationship
+            friend_person: Person object of the friend being invited
+
+        Returns:
+            Boolean indicating success
+        """
+        from flask import url_for
+
+        if not friend_person or not friend_person.email:
+            return False
+
+        event = referral.event
+        referrer = referral.referrer
+
+        # Construct the event URL using the referral's invitation token
+        event_url = url_for(
+            "public.event_detail",
+            event_uuid=event.uuid,
+            token=referral.invitation_token,
+            _external=True
+        )
+
+        subject = f"{referrer.first_name} invited you to {event.title}"
+        html_content = render_template(
+            "emails/friend_invitation.html",
+            event=event,
+            referrer=referrer,
+            recipient=friend_person,
+            referral=referral,
+            event_url=event_url
+        )
+
+        success = NotificationService.send_email(
+            to_email=friend_person.email,
+            to_name=friend_person.full_name,
+            subject=subject,
+            html_content=html_content,
+            event=event,
+            person=friend_person,
+        )
+
+        # Log the notification with friend_invitation type
+        if success:
+            notification = Notification(
+                event_id=event.id,
+                person_id=friend_person.id,
+                notification_type="friend_invitation",
+                channel="email",
+            )
+            notification.mark_sent()
+            db.session.add(notification)
+            db.session.commit()
+
+        return success
+
+    @staticmethod
     def send_rsvp_confirmation(rsvp):
         """Send RSVP confirmation email.
 
@@ -301,14 +362,39 @@ class NotificationService:
         if not person.email:
             return False
 
-        # Get invitation for RSVP link
-        invitation = EventInvitation.query.filter_by(
-            event_id=event.id, household_id=rsvp.household_id
-        ).first()
+        # Determine the event URL based on whether this is a household guest or brought friend
+        event_url = None
+        invitation = None
+        referral = None
+
+        if rsvp.household_id:
+            # Regular household guest - get their invitation
+            invitation = EventInvitation.query.filter_by(
+                event_id=event.id, household_id=rsvp.household_id
+            ).first()
+            if invitation:
+                event_url = invitation.get_event_url()
+        else:
+            # Brought friend - look up their referral
+            referral = GuestReferral.query.filter_by(
+                event_id=event.id, referred_person_id=person.id
+            ).first()
+            if referral and referral.invitation_token:
+                event_url = url_for(
+                    "public.event_detail",
+                    event_uuid=event.uuid,
+                    token=referral.invitation_token,
+                    _external=True
+                )
 
         subject = f"RSVP Confirmed for {event.title}"
         html_content = render_template(
-            "emails/rsvp_confirmation.html", rsvp=rsvp, event=event, invitation=invitation
+            "emails/rsvp_confirmation.html",
+            rsvp=rsvp,
+            event=event,
+            invitation=invitation,
+            referral=referral,
+            event_url=event_url
         )
 
         return NotificationService.send_email(

@@ -11,8 +11,9 @@ class RSVP(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
     person_id = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=False)
+    # household_id is nullable for "brought friends" who don't belong to a household
     household_id = db.Column(
-        db.Integer, db.ForeignKey("households.id"), nullable=False
+        db.Integer, db.ForeignKey("households.id"), nullable=True
     )
     status = db.Column(
         db.String(20), nullable=False, default="no_response"
@@ -66,6 +67,11 @@ class RSVP(db.Model):
     def has_responded(self):
         """Check if person has responded to the invitation."""
         return self.status != "no_response"
+
+    @property
+    def is_brought_friend(self):
+        """Check if this RSVP is for a 'brought friend' (no household association)."""
+        return self.household_id is None
 
     def update_status(self, new_status, notes=None, updated_by_person_id=None, updated_by_host=False):
         """Update RSVP status.

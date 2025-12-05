@@ -267,6 +267,19 @@ def add_person_tag(person_id):
                     # Use person being edited as the "added_by" since we don't have a specific person from token
                     current_person_id = person_id
 
+    # Method 3: Check friend referral token (brought friends can edit their own tags)
+    if not has_permission:
+        token = request.args.get("token")
+        if token:
+            from app.models.guest_referral import GuestReferral
+            token_data = GuestReferral.verify_token(token)
+            if token_data:
+                # Check if the person being edited is the referred friend themselves
+                referred_person_id = token_data.get("referred_person_id")
+                if referred_person_id == person_id:
+                    has_permission = True
+                    current_person_id = person_id
+
     if not has_permission:
         return jsonify({"error": "Permission denied. You can only edit tags for people in your household."}), 403
 
@@ -334,6 +347,18 @@ def remove_person_tag(person_id, tag_name):
                 # Check if person belongs to the household in the token
                 household_id = token_data.get("household_id")
                 if household_id in person_household_ids:
+                    has_permission = True
+
+    # Method 3: Check friend referral token (brought friends can edit their own tags)
+    if not has_permission:
+        token = request.args.get("token")
+        if token:
+            from app.models.guest_referral import GuestReferral
+            token_data = GuestReferral.verify_token(token)
+            if token_data:
+                # Check if the person being edited is the referred friend themselves
+                referred_person_id = token_data.get("referred_person_id")
+                if referred_person_id == person_id:
                     has_permission = True
 
     if not has_permission:

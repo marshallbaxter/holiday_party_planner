@@ -10,6 +10,7 @@ from app.models.notification import Notification
 from app.models.auth_token import AuthToken
 from app.models.tag import Tag, PersonTag
 from app.models.person_invitation_link import PersonInvitationLink
+from app.models.guest_referral import GuestReferral
 
 __all__ = [
     "Person",

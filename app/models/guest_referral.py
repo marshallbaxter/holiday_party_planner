@@ -39,7 +39,12 @@ class GuestReferral(db.Model):
     
     # Short token for SMS-friendly URLs
     short_token = db.Column(db.String(16), unique=True, nullable=True, index=True)
-    
+
+    # Invitation sending tracking
+    sent_at = db.Column(db.DateTime, nullable=True)  # First time invitation was sent
+    sent_count = db.Column(db.Integer, nullable=False, default=0)  # Number of times sent
+    last_sent_at = db.Column(db.DateTime, nullable=True)  # Most recent send time
+
     # Timestamps
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
@@ -69,6 +74,11 @@ class GuestReferral(db.Model):
 
     def __repr__(self):
         return f"<GuestReferral event_id={self.event_id} referrer={self.referrer_person_id} referred={self.referred_person_id}>"
+
+    @property
+    def is_sent(self):
+        """Check if invitation email has been sent."""
+        return self.sent_count > 0
 
     def generate_token(self):
         """Generate a secure token for the referred friend to access the event."""
@@ -138,5 +148,9 @@ class GuestReferral(db.Model):
             "referrer_person_id": self.referrer_person_id,
             "referred_person_id": self.referred_person_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "sent_count": self.sent_count,
+            "last_sent_at": self.last_sent_at.isoformat() if self.last_sent_at else None,
+            "is_sent": self.is_sent,
         }
 

@@ -190,8 +190,14 @@ def manage_guests(event_uuid):
     event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
     invitations = event.invitations.all()
 
+    # Get brought friends for this event
+    brought_friends = BringFriendService.get_friends_for_event(event)
+
     return render_template(
-        "organizer/manage_guests.html", event=event, invitations=invitations
+        "organizer/manage_guests.html",
+        event=event,
+        invitations=invitations,
+        brought_friends=brought_friends
     )
 
 
@@ -907,4 +913,72 @@ def delete_suggested_item(event_uuid, item_id):
     flash(f"Suggested item '{item_name}' deleted successfully.", "success")
 
     return redirect(url_for("organizer.manage_potluck", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/friends/<int:referral_id>/resend", methods=["POST"])
+@login_required
+@event_admin_required
+def resend_friend_invitation(event_uuid, referral_id):
+    """Resend invitation email to a brought friend."""
+    from app.models.guest_referral import GuestReferral
+    from app.services.notification_service import NotificationService
+
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+
+    # Get the referral
+    referral = GuestReferral.query.filter_by(
+        id=referral_id,
+        event_id=event.id
+    ).first_or_404()
+
+    friend_person = referral.referred
+
+    if not friend_person.email:
+        flash(f"Cannot send invitation to {friend_person.full_name} - no email address on file.", "warning")
+        return redirect(url_for("organizer.manage_guests", event_uuid=event_uuid))
+
+    try:
+        if NotificationService.send_friend_invitation_email(referral, friend_person):
+            # Update referral sent tracking
+            from datetime import datetime
+            if not referral.sent_at:
+                referral.sent_at = datetime.utcnow()
+            referral.sent_count = (referral.sent_count or 0) + 1
+            referral.last_sent_at = datetime.utcnow()
+            db.session.commit()
+            flash(f"Invitation resent to {friend_person.full_name}!", "success")
+        else:
+            flash(f"Could not send invitation to {friend_person.full_name}. Please try again.", "warning")
+    except Exception as e:
+        flash(f"Error resending invitation: {str(e)}", "error")
+
+    return redirect(url_for("organizer.manage_guests", event_uuid=event_uuid))
+
+
+@bp.route("/event/<uuid:event_uuid>/friends/<int:referral_id>/remove", methods=["POST"])
+@login_required
+@event_admin_required
+def remove_brought_friend(event_uuid, referral_id):
+    """Remove a brought friend from the event."""
+    from app.models.guest_referral import GuestReferral
+
+    event = Event.query.filter_by(uuid=str(event_uuid)).first_or_404()
+
+    # Get the referral
+    referral = GuestReferral.query.filter_by(
+        id=referral_id,
+        event_id=event.id
+    ).first_or_404()
+
+    friend_name = referral.referred.full_name
+
+    try:
+        if BringFriendService.remove_friend(referral):
+            flash(f"{friend_name} has been removed from this event.", "success")
+        else:
+            flash(f"Could not remove {friend_name}. Please try again.", "warning")
+    except Exception as e:
+        flash(f"Error removing guest: {str(e)}", "error")
+
+    return redirect(url_for("organizer.manage_guests", event_uuid=event_uuid))
 

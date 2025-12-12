@@ -22,13 +22,13 @@
 </div>
 
 <!-- Statistics -->
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
     <div class="bg-white rounded-lg shadow p-6">
         <div class="text-sm font-medium text-gray-600 mb-1">Invited Households</div>
         <div class="text-3xl font-bold text-gray-900">{{ invitations|length }}</div>
     </div>
     <div class="bg-white rounded-lg shadow p-6">
-        <div class="text-sm font-medium text-gray-600 mb-1">Total Guests</div>
+        <div class="text-sm font-medium text-gray-600 mb-1">Household Guests</div>
         <div class="text-3xl font-bold text-gray-900">
             {% set total_guests = namespace(count=0) %}
             {% for invitation in invitations %}
@@ -38,15 +38,17 @@
         </div>
     </div>
     <div class="bg-white rounded-lg shadow p-6">
-        <div class="text-sm font-medium text-gray-600 mb-1">With Email</div>
+        <div class="text-sm font-medium text-purple-600 mb-1">Brought Friends</div>
+        <div class="text-3xl font-bold text-purple-900">{{ brought_friends|length }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm font-medium text-gray-600 mb-1">Total Guests</div>
         <div class="text-3xl font-bold text-gray-900">
-            {% set with_email = namespace(count=0) %}
+            {% set total_guests = namespace(count=0) %}
             {% for invitation in invitations %}
-                {% if invitation.household.contacts_with_email|length > 0 %}
-                    {% set with_email.count = with_email.count + 1 %}
-                {% endif %}
+                {% set total_guests.count = total_guests.count + invitation.household.active_members|length %}
             {% endfor %}
-            {{ with_email.count }}
+            {{ total_guests.count + brought_friends|length }}
         </div>
     </div>
 </div>
@@ -157,6 +159,126 @@
     {% endif %}
 </div>
 
+<!-- Brought Friends Section -->
+{% if brought_friends %}
+<div class="bg-white rounded-lg shadow mt-8">
+    <div class="px-6 py-4 border-b border-gray-200 bg-purple-50">
+        <h2 class="text-xl font-semibold text-purple-900">🎉 Brought Friends ({{ brought_friends|length }})</h2>
+        <p class="text-sm text-purple-700 mt-1">Guests invited by other attendees via the "Bring a Friend" feature</p>
+    </div>
+
+    <ul class="divide-y divide-gray-200">
+        {% for friend_data in brought_friends %}
+            <li class="px-6 py-4 hover:bg-purple-50">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-lg font-medium text-gray-900">{{ friend_data.person.full_name }}</h3>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                Brought Friend
+                            </span>
+                            {% if friend_data.rsvp %}
+                                {% if friend_data.rsvp.status == 'attending' %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        ✓ Attending
+                                    </span>
+                                {% elif friend_data.rsvp.status == 'not_attending' %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        ✗ Not Attending
+                                    </span>
+                                {% elif friend_data.rsvp.status == 'maybe' %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                        ? Maybe
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                        No Response
+                                    </span>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+
+                        <div class="mt-1 text-sm text-gray-600">
+                            <span class="text-purple-600">👤 Invited by: {{ friend_data.referrer.full_name }}</span>
+
+                            {% if friend_data.person.email %}
+                                <span class="ml-3">📧 {{ friend_data.person.email }}</span>
+                            {% endif %}
+
+                            {% if friend_data.person.phone %}
+                                <span class="ml-3">📱 {{ friend_data.person.phone }}</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Dietary restrictions -->
+                        {% if friend_data.person.tags %}
+                        <div class="mt-2">
+                            {% for tag in friend_data.person.tags %}
+                                <span class="inline-block bg-green-100 text-green-800 rounded px-2 py-0.5 text-xs mr-1 mb-1">
+                                    🥗 {{ tag.name }}
+                                </span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <!-- RSVP Notes -->
+                        {% if friend_data.rsvp and friend_data.rsvp.notes %}
+                        <div class="mt-2 text-sm text-gray-600 italic">
+                            "{{ friend_data.rsvp.notes }}"
+                        </div>
+                        {% endif %}
+
+                        <div class="mt-2 text-xs text-gray-500">
+                            Invited {{ friend_data.referral.created_at|datetime('%b %d, %Y at %I:%M %p') }}
+                            {% if friend_data.referral.is_sent %}
+                                <span class="ml-2 text-green-600">
+                                    ✓ Email sent {{ friend_data.referral.sent_at|datetime('%b %d, %Y') if friend_data.referral.sent_at else '' }}
+                                    {% if friend_data.referral.sent_count > 1 %}
+                                        ({{ friend_data.referral.sent_count }}x)
+                                    {% endif %}
+                                </span>
+                            {% elif friend_data.person.email %}
+                                <span class="ml-2 text-amber-600">⏳ Email pending</span>
+                            {% else %}
+                                <span class="ml-2 text-gray-500">No email address</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="ml-4 flex flex-col space-y-2">
+                        {% if friend_data.person.email %}
+                            <form method="POST"
+                                  action="{{ url_for('organizer.resend_friend_invitation', event_uuid=event.uuid, referral_id=friend_data.referral.id) }}"
+                                  class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit"
+                                        class="text-green-600 hover:text-green-500 text-sm font-medium">
+                                    {% if friend_data.referral.is_sent %}
+                                        📧 Resend
+                                    {% else %}
+                                        📧 Send Now
+                                    {% endif %}
+                                </button>
+                            </form>
+                        {% endif %}
+                        <form method="POST"
+                              action="{{ url_for('organizer.remove_brought_friend', event_uuid=event.uuid, referral_id=friend_data.referral.id) }}"
+                              onsubmit="return confirm('Remove {{ friend_data.person.full_name }} from this event? This will delete their RSVP.');"
+                              class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit"
+                                    class="text-red-600 hover:text-red-500 text-sm font-medium">
+                                Remove
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 <!-- Help Text -->
 <div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
     <h3 class="text-sm font-medium text-blue-800 mb-2">💡 Next Steps</h3>
@@ -165,6 +287,9 @@
         <li>Send invitation emails from the event dashboard</li>
         <li>Manage RSVPs for each guest from the event dashboard</li>
         <li>View household details by clicking "View Details"</li>
+        {% if brought_friends %}
+        <li>Brought friends are guests invited by your attendees - they'll appear at the party!</li>
+        {% endif %}
     </ul>
 </div>
 {% endblock %}

@@ -21,10 +21,10 @@
     </div>
 </div>
 
-<!-- Statistics -->
+<!-- Statistics - Households -->
 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
     <div class="bg-white rounded-lg shadow p-6">
-        <div class="text-sm font-medium text-gray-600 mb-1">Total Invited</div>
+        <div class="text-sm font-medium text-gray-600 mb-1">Households Invited</div>
         <div class="text-3xl font-bold text-gray-900">{{ invitation_stats.total }}</div>
     </div>
     <div class="bg-white rounded-lg shadow p-6">
@@ -47,6 +47,28 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Statistics - Brought Friends -->
+{% if brought_friends %}
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-purple-50 rounded-lg shadow p-6 border border-purple-200">
+        <div class="text-sm font-medium text-purple-600 mb-1">🎉 Brought Friends</div>
+        <div class="text-3xl font-bold text-purple-900">{{ bf_stats.total }}</div>
+    </div>
+    <div class="bg-purple-50 rounded-lg shadow p-6 border border-purple-200">
+        <div class="text-sm font-medium text-purple-600 mb-1">📧 Email Pending</div>
+        <div class="text-3xl font-bold text-amber-600">{{ bf_stats.pending }}</div>
+    </div>
+    <div class="bg-purple-50 rounded-lg shadow p-6 border border-purple-200">
+        <div class="text-sm font-medium text-purple-600 mb-1">📧 Email Sent</div>
+        <div class="text-3xl font-bold text-green-600">{{ bf_stats.email_sent }}</div>
+    </div>
+    <div class="bg-purple-50 rounded-lg shadow p-6 border border-purple-200">
+        <div class="text-sm font-medium text-purple-600 mb-1">No Email</div>
+        <div class="text-3xl font-bold text-red-600">{{ bf_stats.no_email }}</div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Bulk Actions -->
 {% if invitation_stats.pending > 0 %}
@@ -223,6 +245,105 @@
     {% endif %}
 </div>
 
+<!-- Brought Friends Section -->
+{% if brought_friends %}
+<div class="bg-white rounded-lg shadow mt-8">
+    <div class="px-6 py-4 border-b border-gray-200 bg-purple-50">
+        <h2 class="text-xl font-semibold text-purple-900">🎉 Brought Friends ({{ brought_friends|length }})</h2>
+        <p class="text-sm text-purple-700 mt-1">Guests invited by attendees via the "Bring a Friend" feature</p>
+    </div>
+
+    <ul class="divide-y divide-gray-200">
+        {% for friend_data in brought_friends %}
+            <li class="px-6 py-4 hover:bg-purple-50">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-lg font-medium text-gray-900">{{ friend_data.person.full_name }}</h3>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                Brought Friend
+                            </span>
+                            {% if friend_data.referral.is_sent %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    ✓ Sent
+                                    {% if friend_data.referral.sent_count > 1 %}({{ friend_data.referral.sent_count }}x){% endif %}
+                                </span>
+                            {% elif friend_data.person.email %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                    ⏳ Pending
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                    No Email
+                                </span>
+                            {% endif %}
+                        </div>
+
+                        <div class="mt-1 text-sm text-gray-600">
+                            <span class="text-purple-600">👤 Invited by: {{ friend_data.referrer.full_name }}</span>
+                            {% if friend_data.person.email %}
+                                <span class="ml-3">📧 {{ friend_data.person.email }}</span>
+                            {% endif %}
+                            {% if friend_data.person.phone %}
+                                <span class="ml-3">📱 {{ friend_data.person.phone|phone }}</span>
+                            {% endif %}
+                        </div>
+
+                        {% if friend_data.referral.is_sent %}
+                        <div class="mt-1 text-xs text-gray-500">
+                            📧 Last sent: {{ friend_data.referral.last_sent_at|datetime('%b %d, %Y at %I:%M %p') if friend_data.referral.last_sent_at else friend_data.referral.sent_at|datetime('%b %d, %Y at %I:%M %p') }}
+                            {% if friend_data.referral.sent_count > 1 %}({{ friend_data.referral.sent_count }}x){% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="ml-4 flex items-center gap-2">
+                        {% if friend_data.person.email %}
+                            <form method="POST"
+                                  action="{{ url_for('organizer.resend_friend_invitation', event_uuid=event.uuid, referral_id=friend_data.referral.id) }}"
+                                  class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                {% if friend_data.referral.is_sent %}
+                                    <button type="submit"
+                                            class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md shadow-sm text-xs font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                        📧 Resend
+                                    </button>
+                                {% else %}
+                                    <button type="submit"
+                                            class="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-purple-600 hover:bg-purple-700">
+                                        📧 Send Now
+                                    </button>
+                                {% endif %}
+                            </form>
+                        {% else %}
+                            <span class="text-xs text-gray-400 italic px-2" title="No email address">📧 —</span>
+                        {% endif %}
+
+                        {# Copy Link Button - friend's short link for manual sharing #}
+                        {% if friend_data.referral.short_token %}
+                        <button type="button"
+                                onclick="copyInviteLink('{{ url_for('public.friend_short_redirect', short_token=friend_data.referral.short_token, _external=True) }}', this)"
+                                class="inline-flex items-center px-3 py-1 border border-purple-300 rounded text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                title="Copy {{ friend_data.person.first_name }}'s invitation link to share via WhatsApp, iMessage, Signal, etc.">
+                            🔗 Copy
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {# Show the actual link for easy copying/testing #}
+                {% if friend_data.referral.short_token %}
+                <div class="mt-2 ml-4">
+                    <code class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded select-all cursor-text"
+                          title="Click to select, then Cmd+C to copy">{{ url_for('public.friend_short_redirect', short_token=friend_data.referral.short_token, _external=True) }}</code>
+                </div>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 <!-- Help Text -->
 <div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
     <h3 class="text-sm font-medium text-blue-800 mb-2">💡 Tips</h3>
@@ -233,10 +354,12 @@
         {% endif %}
         <li><strong>🔗 Copy Link</strong> - Copy a short invitation link to share via WhatsApp, iMessage, Signal, or any messaging app</li>
         <li><strong>Send to All</strong> - Send email invitations to everyone in the household with an email address</li>
-        <li><strong>🔗 Copy Link</strong> - Copy a person's unique invitation link to share via WhatsApp, iMessage, Signal, or any messaging app</li>
         <li>Each person gets their own personalized link for a customized experience</li>
         <li>Members without contact information cannot receive invitations</li>
         <li>The household send count tracks bulk sends (not individual sends)</li>
+        {% if brought_friends %}
+        <li><strong>🎉 Brought Friends</strong> - Guests invited by your attendees are shown separately with purple styling</li>
+        {% endif %}
         <li>Great for testing: send to yourself first before sending to everyone</li>
     </ul>
 </div>

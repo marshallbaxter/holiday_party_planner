@@ -344,6 +344,15 @@ def manage_invitations(event_uuid):
     # Get invitation statistics
     invitation_stats = InvitationService.get_invitation_stats(event)
 
+    # Get brought friends for this event
+    brought_friends = BringFriendService.get_friends_for_event(event)
+
+    # Calculate brought friends email stats
+    bf_total = len(brought_friends)
+    bf_email_sent = sum(1 for bf in brought_friends if bf['referral'].is_sent)
+    bf_pending = sum(1 for bf in brought_friends if bf['person'].email and not bf['referral'].is_sent)
+    bf_no_email = sum(1 for bf in brought_friends if not bf['person'].email)
+
     # Check if SMS is enabled
     sms_enabled = current_app.config.get("ENABLE_SMS", False)
 
@@ -352,6 +361,13 @@ def manage_invitations(event_uuid):
         event=event,
         invitations=invitations,
         invitation_stats=invitation_stats,
+        brought_friends=brought_friends,
+        bf_stats={
+            'total': bf_total,
+            'email_sent': bf_email_sent,
+            'pending': bf_pending,
+            'no_email': bf_no_email,
+        },
         sms_enabled=sms_enabled,
     )
 
